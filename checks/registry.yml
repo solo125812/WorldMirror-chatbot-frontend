@@ -1,0 +1,89 @@
+# Checks Registry — Phase 1 + Phase 2
+# Maps features to their source files and test files
+
+chat:
+  files:
+    - packages/core/src/orchestrator/chatPipeline.ts
+    - apps/server/src/api/routes/chat.ts
+    - apps/server/src/services/chatService.ts
+  tests:
+    - tests/unit/chatPipeline.spec.ts
+    - tests/integration/chatSse.spec.ts
+  runtime_checks:
+    - health: /health
+    - endpoint: POST /chat/stream
+
+providers:
+  files:
+    - packages/core/src/providers/mock.ts
+    - packages/core/src/providers/registry.ts
+    - packages/core/src/providers/anthropic.ts
+    - packages/core/src/providers/ollama.ts
+  tests:
+    - tests/unit/providers.mock.spec.ts
+  runtime_checks: []
+
+config:
+  files:
+    - apps/server/src/services/configService.ts
+    - apps/server/src/api/routes/config.ts
+  tests:
+    - tests/integration/config.spec.ts
+  runtime_checks:
+    - endpoint: GET /config
+
+characters:
+  files:
+    - packages/types/src/characters.ts
+    - packages/db/src/repositories/characterRepo.ts
+    - packages/core/src/characters/cardParser.ts
+    - packages/core/src/characters/cardExporter.ts
+    - apps/server/src/api/routes/characters.ts
+  tests:
+    - tests/unit/cardParser.spec.ts
+    - tests/integration/characters.spec.ts
+  runtime_checks:
+    - endpoint: GET /characters
+
+swipes:
+  files:
+    - packages/db/src/repositories/messageRepo.ts
+  tests:
+    - tests/unit/swipes.spec.ts
+  runtime_checks: []
+
+samplers:
+  files:
+    - packages/types/src/sampler.ts
+    - packages/db/src/repositories/samplerPresetRepo.ts
+    - apps/server/src/api/routes/samplerPresets.ts
+  tests:
+    - tests/integration/samplerPresets.spec.ts
+  runtime_checks:
+    - endpoint: GET /sampler-presets
+
+macros:
+  files:
+    - packages/core/src/orchestrator/macros.ts
+    - packages/core/src/orchestrator/regex.ts
+  tests:
+    - tests/unit/macros.spec.ts
+  runtime_checks: []
+
+persistence:
+  files:
+    - packages/db/src/client.ts
+    - packages/db/src/repositories/chatRepo.ts
+    - packages/db/src/repositories/messageRepo.ts
+    - apps/server/migrations/001_init.sql
+  tests:
+    - tests/integration/chatHistory.spec.ts
+  runtime_checks:
+    - endpoint: GET /chats
+
+token_budget:
+  files:
+    - packages/core/src/orchestrator/tokenBudget.ts
+  tests:
+    - tests/unit/tokenBudget.spec.ts
+  runtime_checks: []

@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.turbo/
+.svelte-kit/
+.env
+*.local
+data/
+checks/trace.json
+artifacts/
