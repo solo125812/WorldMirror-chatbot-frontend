@@ -10,7 +10,7 @@ import type { PluginRepo } from '@chatbot/db';
 import { validateManifest, safeValidateManifest } from './manifest.js';
 import { HookDispatcher, type HookHandler } from './hooks.js';
 import { logger } from '@chatbot/utils';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 
 /** Tool registry entry (includes the run function) */
@@ -54,7 +54,6 @@ export class PluginLoader {
 
       try {
         // Each subdirectory is a potential plugin
-        const { readdirSync } = require('node:fs') as typeof import('node:fs');
         const entries = readdirSync(dir, { withFileTypes: true });
 
         for (const entry of entries) {

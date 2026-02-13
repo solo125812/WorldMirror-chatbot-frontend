@@ -115,7 +115,8 @@ export class CodeIndexer {
     const topK = request.topK ?? 10;
 
     // Generate embedding for query
-    const queryEmbedding = await this.embeddingProvider.embed(request.query);
+    const queryResult = await this.embeddingProvider.embed([request.query]);
+    const queryEmbedding = queryResult.embeddings[0] ?? [];
 
     // Search vector store
     const filter: Record<string, unknown> = { type: 'code' };
@@ -171,6 +172,12 @@ export class CodeIndexer {
     // Mark job as running
     this.indexJobRepo.updateStatus(jobId, 'running');
 
+    // Full reindex: clear previous chunks/vectors for this workspace
+    if (mode === 'full') {
+      this.codeChunkRepo.deleteByWorkspace(workspacePath);
+      this.vectorStore.deleteByMetadata('workspacePath', workspacePath);
+    }
+
     // Step 1: Scan workspace
     const ignorePatterns = loadIgnorePatterns(workspacePath, userIgnorePatterns);
     const files = scanWorkspace(workspacePath, ignorePatterns);
@@ -180,7 +187,7 @@ export class CodeIndexer {
     // Step 2: For incremental mode, filter to changed files only
     let filesToProcess = files;
     if (mode === 'incremental') {
-      const existingHashes = this.codeChunkRepo.getFileHashes();
+      const existingHashes = this.codeChunkRepo.getFileHashes(workspacePath);
       filesToProcess = files.filter((f) => {
         const existing = existingHashes.get(f.relativePath);
         return !existing || existing !== f.hash;
@@ -206,11 +213,20 @@ export class CodeIndexer {
 
           // Remove old chunks for this file (if incremental)
           if (mode === 'incremental') {
-            this.codeChunkRepo.deleteByFilePath(file.relativePath);
+            const codeKey = `${workspacePath}::${file.relativePath}`;
+            this.vectorStore.deleteByMetadata('codeKey', codeKey);
+            this.codeChunkRepo.deleteByFilePath(file.relativePath, workspacePath);
           }
 
           // Chunk the file
-          const chunks = chunkFile(content, file.relativePath, file.language, documentId);
+          const chunks = chunkFile(
+            content,
+            file.relativePath,
+            file.language,
+            documentId,
+            workspacePath,
+            file.hash,
+          );
 
           if (chunks.length > 0) {
             // Store chunks in DB
@@ -219,7 +235,13 @@ export class CodeIndexer {
             // Generate embeddings and store in vector store
             for (const chunk of stored) {
               try {
-                const embedding = await this.embeddingProvider.embed(chunk.content);
+                const embedResult = await this.embeddingProvider.embed([chunk.content]);
+                const embedding = embedResult.embeddings[0];
+                if (!embedding) {
+                  logger.warn(`No embedding returned for chunk ${chunk.id}`);
+                  continue;
+                }
+                const codeKey = `${workspacePath}::${chunk.filePath}`;
                 this.vectorStore.insert(chunk.id, embedding, {
                   type: 'code',
                   chunkId: chunk.id,
@@ -228,6 +250,7 @@ export class CodeIndexer {
                   lineStart: chunk.lineStart,
                   lineEnd: chunk.lineEnd,
                   workspacePath,
+                  codeKey,
                 });
                 this.codeChunkRepo.updateEmbeddingRef(chunk.id, chunk.id);
               } catch (e) {

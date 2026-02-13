@@ -262,6 +262,7 @@ export function createContainer(): Container {
     variableRepo,
     regexRuleRepo,
     triggerRepo,
+    hookDispatcher,
   );
 
   container = {

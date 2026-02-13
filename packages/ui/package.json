@@ -1,0 +1,19 @@
+{
+  "name": "@chatbot/ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "build": "echo 'Svelte components - no separate build needed'",
+    "typecheck": "echo 'typecheck placeholder'",
+    "lint": "echo 'lint placeholder'"
+  },
+  "dependencies": {
+    "@chatbot/types": "workspace:*"
+  },
+  "devDependencies": {
+    "svelte": "^5.19.9",
+    "typescript": "^5.7.3"
+  }
+}

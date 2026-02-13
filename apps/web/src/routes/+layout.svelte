@@ -13,6 +13,11 @@
     <h1>🌐 WorldMirror</h1>
     <nav>
       <a href="/chat">Chat</a>
+      <a href="/characters">Characters</a>
+      <a href="/plugins">Plugins</a>
+      <a href="/extensions">Extensions</a>
+      <a href="/indexing">Indexing</a>
+      <a href="/logs">Logs</a>
       <a href="/settings">Settings</a>
     </nav>
   </header>

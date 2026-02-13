@@ -11,7 +11,20 @@ import { safeValidateExtensionManifest } from './manifest.js';
 import { logger } from '@chatbot/utils';
 import { existsSync, readFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve, basename } from 'node:path';
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
+
+function assertSafeArg(value: string, label: string): string {
+  if (!value || typeof value !== 'string') {
+    throw new Error(`${label} is required`);
+  }
+  if (value.includes('\0')) {
+    throw new Error(`${label} contains invalid characters`);
+  }
+  if (value.startsWith('-')) {
+    throw new Error(`${label} cannot start with '-'`);
+  }
+  return value;
+}
 
 export interface ExtensionManagerConfig {
   extensionsDir: string;
@@ -58,7 +71,9 @@ export class ExtensionManager {
    */
   private installFromGit(url: string, branch: string | undefined, scope: ExtensionScope): InstalledExtension {
     // Derive extension name from URL
-    const name = basename(url, '.git').replace(/[^a-zA-Z0-9_-]/g, '-');
+    const safeUrl = assertSafeArg(url, 'url');
+    const safeBranch = branch ? assertSafeArg(branch, 'branch') : undefined;
+    const name = basename(safeUrl, '.git').replace(/[^a-zA-Z0-9_-]/g, '-');
 
     // Check if already installed
     const existing = this.extensionRepo.getByName(name);
@@ -70,8 +85,12 @@ export class ExtensionManager {
 
     try {
       // Clone the repository
-      const branchArg = branch ? `--branch ${branch}` : '';
-      execSync(`git clone ${branchArg} --depth 1 "${url}" "${targetDir}"`, {
+      const args = ['clone'];
+      if (safeBranch) {
+        args.push('--branch', safeBranch);
+      }
+      args.push('--depth', '1', safeUrl, targetDir);
+      execFileSync('git', args, {
         stdio: 'pipe',
         timeout: 60_000,
       });
@@ -82,7 +101,9 @@ export class ExtensionManager {
       // Get commit hash
       let commit: string | null = null;
       try {
-        commit = execSync('git rev-parse HEAD', { cwd: targetDir, stdio: 'pipe' }).toString().trim();
+        commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: targetDir, stdio: 'pipe' })
+          .toString()
+          .trim();
       } catch {
         // Not critical
       }
@@ -95,8 +116,8 @@ export class ExtensionManager {
         author: manifest?.author ?? '',
         source: 'git',
         scope,
-        repoUrl: url,
-        branch: branch ?? null,
+        repoUrl: safeUrl,
+        branch: safeBranch ?? null,
         commit,
       });
     } catch (error) {
@@ -112,7 +133,9 @@ export class ExtensionManager {
    * Install extension from an archive (zip) path.
    */
   private installFromArchive(path: string, scope: ExtensionScope): InstalledExtension {
-    const name = basename(path, '.zip').replace(/[^a-zA-Z0-9_-]/g, '-');
+    const resolvedPath = resolve(path);
+    const safePath = assertSafeArg(resolvedPath, 'archive path');
+    const name = basename(safePath, '.zip').replace(/[^a-zA-Z0-9_-]/g, '-');
 
     const existing = this.extensionRepo.getByName(name);
     if (existing) {
@@ -125,7 +148,7 @@ export class ExtensionManager {
       mkdirSync(targetDir, { recursive: true });
 
       // Extract archive (using system unzip)
-      execSync(`unzip -o "${resolve(path)}" -d "${targetDir}"`, {
+      execFileSync('unzip', ['-o', safePath, '-d', targetDir], {
         stdio: 'pipe',
         timeout: 30_000,
       });
@@ -166,11 +189,13 @@ export class ExtensionManager {
     }
 
     try {
-      execSync('git pull', { cwd: targetDir, stdio: 'pipe', timeout: 60_000 });
+      execFileSync('git', ['pull'], { cwd: targetDir, stdio: 'pipe', timeout: 60_000 });
 
       let commit: string | null = null;
       try {
-        commit = execSync('git rev-parse HEAD', { cwd: targetDir, stdio: 'pipe' }).toString().trim();
+        commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: targetDir, stdio: 'pipe' })
+          .toString()
+          .trim();
       } catch {
         // Not critical
       }
@@ -215,7 +240,8 @@ export class ExtensionManager {
     }
 
     try {
-      const output = execSync(`git ls-remote --heads "${ext.repoUrl}"`, {
+      const safeRepoUrl = assertSafeArg(ext.repoUrl, 'repoUrl');
+      const output = execFileSync('git', ['ls-remote', '--heads', safeRepoUrl], {
         stdio: 'pipe',
         timeout: 30_000,
       }).toString();
@@ -243,8 +269,13 @@ export class ExtensionManager {
         const targetDir = join(this.extensionsDir, ext.name);
         if (!existsSync(targetDir)) continue;
 
-        const local = execSync('git rev-parse HEAD', { cwd: targetDir, stdio: 'pipe' }).toString().trim();
-        const remote = execSync(`git ls-remote "${ext.repoUrl}" HEAD`, { stdio: 'pipe' }).toString().split('\t')[0]?.trim() ?? '';
+        const local = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: targetDir, stdio: 'pipe' })
+          .toString()
+          .trim();
+        const safeRepoUrl = assertSafeArg(ext.repoUrl, 'repoUrl');
+        const remote = execFileSync('git', ['ls-remote', safeRepoUrl, 'HEAD'], { stdio: 'pipe' })
+          .toString()
+          .split('\t')[0]?.trim() ?? '';
 
         results.push({
           name: ext.name,

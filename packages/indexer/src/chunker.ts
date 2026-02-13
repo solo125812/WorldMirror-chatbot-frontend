@@ -34,6 +34,8 @@ export function chunkCode(
   filePath: string,
   language: string,
   documentId: string,
+  workspacePath: string,
+  fileHash: string,
   config: Partial<ChunkConfig> = {},
 ): CreateCodeChunkPayload[] {
   const cfg = { ...DEFAULT_CONFIG, ...config };
@@ -44,12 +46,14 @@ export function chunkCode(
     if (lines.length < cfg.minLines) return [];
     return [{
       documentId,
+      workspacePath,
       filePath,
       language,
       content,
       lineStart: 1,
       lineEnd: lines.length,
       hash: hashFile(content),
+      fileHash,
     }];
   }
 
@@ -82,12 +86,14 @@ export function chunkCode(
     if (chunkLines.length >= cfg.minLines) {
       chunks.push({
         documentId,
+        workspacePath,
         filePath,
         language,
         content: chunkContent,
         lineStart: chunkStart + 1,
         lineEnd: chunkEnd,
         hash: hashFile(chunkContent),
+        fileHash,
       });
     }
 
@@ -111,9 +117,11 @@ export function chunkFile(
   filePath: string,
   language: string,
   documentId: string,
+  workspacePath: string,
+  fileHash: string,
   config?: Partial<ChunkConfig>,
 ): CreateCodeChunkPayload[] {
   // In the future, we can dispatch to language-specific chunkers here
   // e.g. if (hasTreeSitter(language)) return treeSitterChunk(...)
-  return chunkCode(content, filePath, language, documentId, config);
+  return chunkCode(content, filePath, language, documentId, workspacePath, fileHash, config);
 }

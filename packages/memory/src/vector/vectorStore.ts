@@ -27,6 +27,7 @@ export interface VectorStore {
   deleteByMetadata(key: string, value: unknown): number;
   count(): number;
   clear(): void;
+  flush(): void;
 }
 
 /**

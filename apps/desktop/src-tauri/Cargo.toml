@@ -1,0 +1,27 @@
+[package]
+name = "worldmirror-desktop"
+version = "0.1.0"
+description = "WorldMirror Desktop — AI Chatbot Frontend"
+authors = ["WorldMirror"]
+edition = "2021"
+
+[lib]
+name = "worldmirror_desktop_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+tauri-plugin-os = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+keyring = "3"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

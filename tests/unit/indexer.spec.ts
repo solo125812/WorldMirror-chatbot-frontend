@@ -57,14 +57,14 @@ describe('hashFile', () => {
 describe('chunkCode', () => {
   it('should return empty array for very small files', () => {
     const content = 'const x = 1;\n';
-    const chunks = chunkCode(content, 'test.ts', 'typescript', 'doc-1', { minLines: 5 });
+    const chunks = chunkCode(content, 'test.ts', 'typescript', 'doc-1', 'workspace', hashFile(content), { minLines: 5 });
     expect(chunks).toEqual([]);
   });
 
   it('should return a single chunk for small files', () => {
     const lines = Array.from({ length: 20 }, (_, i) => `const line${i} = ${i};`);
     const content = lines.join('\n');
-    const chunks = chunkCode(content, 'test.ts', 'typescript', 'doc-1', { maxLines: 200, minLines: 5 });
+    const chunks = chunkCode(content, 'test.ts', 'typescript', 'doc-1', 'workspace', hashFile(content), { maxLines: 200, minLines: 5 });
     expect(chunks).toHaveLength(1);
     expect(chunks[0]!.filePath).toBe('test.ts');
     expect(chunks[0]!.language).toBe('typescript');
@@ -75,7 +75,7 @@ describe('chunkCode', () => {
   it('should split large files into multiple chunks', () => {
     const lines = Array.from({ length: 500 }, (_, i) => `const line${i} = ${i};`);
     const content = lines.join('\n');
-    const chunks = chunkCode(content, 'big.ts', 'typescript', 'doc-1', { maxLines: 100, minLines: 5, overlapLines: 10 });
+    const chunks = chunkCode(content, 'big.ts', 'typescript', 'doc-1', 'workspace', hashFile(content), { maxLines: 100, minLines: 5, overlapLines: 10 });
     expect(chunks.length).toBeGreaterThan(1);
 
     // All chunks should have correct filePath
@@ -89,7 +89,7 @@ describe('chunkCode', () => {
   it('should include hash for each chunk', () => {
     const lines = Array.from({ length: 10 }, (_, i) => `line ${i}`);
     const content = lines.join('\n');
-    const chunks = chunkCode(content, 'test.ts', 'typescript', 'doc-1');
+    const chunks = chunkCode(content, 'test.ts', 'typescript', 'doc-1', 'workspace', hashFile(content));
     expect(chunks).toHaveLength(1);
     expect(chunks[0]!.hash).toMatch(/^[0-9a-f]{16}$/);
   });

@@ -22,12 +22,14 @@ export interface CodeChunkMetadata {
 export interface CodeChunk {
   id: string;
   documentId: string;
+  workspacePath: string;
   filePath: string;
   language: string;
   content: string;
   lineStart: number;
   lineEnd: number;
   hash: string;
+  fileHash: string;
   embeddingRef: string | null;
   createdAt: string;
 }
@@ -35,12 +37,14 @@ export interface CodeChunk {
 /** Payload to create a code chunk */
 export interface CreateCodeChunkPayload {
   documentId: string;
+  workspacePath: string;
   filePath: string;
   language: string;
   content: string;
   lineStart: number;
   lineEnd: number;
   hash: string;
+  fileHash: string;
 }
 
 /** Indexing job record (persisted) */

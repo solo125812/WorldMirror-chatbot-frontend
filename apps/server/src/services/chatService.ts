@@ -7,8 +7,9 @@
 import { ChatRepo, MessageRepo, CharacterRepo, SamplerPresetRepo } from '@chatbot/db';
 import type { LorebookRepo, LorebookBindingRepo, LorebookEntryRepo, VariableRepo, RegexRuleRepo, TriggerRepo } from '@chatbot/db';
 import type { ChatPipeline, SkillRegistry } from '@chatbot/core';
+import type { HookDispatcher } from '@chatbot/plugins';
 import type { ConfigService } from './configService.js';
-import type { ChatMessage } from '@chatbot/types';
+import type { ChatMessage, PluginHookEvent } from '@chatbot/types';
 import {
   collectStream,
   expandMacros,
@@ -51,6 +52,7 @@ export class ChatService {
     private variableRepo?: VariableRepo,
     private regexRuleRepo?: RegexRuleRepo,
     private triggerRepo?: TriggerRepo,
+    private hookDispatcher?: HookDispatcher,
   ) { }
 
   private get contextWindow(): number {
@@ -305,6 +307,15 @@ export class ChatService {
     }
   }
 
+  private async dispatchHook(event: PluginHookEvent, context: Record<string, unknown>): Promise<void> {
+    if (!this.hookDispatcher) return;
+    try {
+      await this.hookDispatcher.dispatch(event, context);
+    } catch (error) {
+      logger.warn('Plugin hook dispatch failed', error);
+    }
+  }
+
   /**
    * Send a message and get a full (non-streaming) response.
    */
@@ -315,11 +326,13 @@ export class ChatService {
   }): Promise<{ chatId: string; message: ChatMessage }> {
     // Create or get chat
     let chat = opts.chatId ? this.chatRepo.getChat(opts.chatId) : null;
+    const isNewChat = !chat;
     if (!chat) {
       chat = this.chatRepo.createChat({
         characterId: opts.characterId,
         samplerPresetId: 'default',
       });
+      await this.dispatchHook('session_start', { chatId: chat.id, characterId: opts.characterId ?? null });
     }
     const chatId = chat.id;
 
@@ -327,6 +340,12 @@ export class ChatService {
     this.messageRepo.addMessage(chatId, {
       role: 'user',
       content: opts.message,
+    });
+    await this.dispatchHook('message_received', {
+      chatId,
+      characterId: opts.characterId ?? chat.characterId ?? null,
+      message: opts.message,
+      isNewChat,
     });
 
     // Run auto-capture on user message
@@ -449,6 +468,17 @@ export class ChatService {
       }
     }
 
+    await this.dispatchHook('before_generation', {
+      chatId,
+      characterId: characterId ?? null,
+      message: triggerResult.messageContent,
+    });
+    await this.dispatchHook('message_sending', {
+      chatId,
+      characterId: characterId ?? null,
+      message: triggerResult.messageContent,
+    });
+
     // Execute pipeline
     const content = await collectStream(
       this.pipeline.execute(trimmedHistory, {
@@ -474,6 +504,12 @@ export class ChatService {
     );
     finalContent = postGenTrigger.messageContent;
 
+    await this.dispatchHook('after_generation', {
+      chatId,
+      characterId: characterId ?? null,
+      response: finalContent,
+    });
+
     // Store assistant message
     const assistantMsg = this.messageRepo.addMessage(chatId, {
       role: 'assistant',
@@ -496,11 +532,13 @@ export class ChatService {
   }): AsyncIterable<{ type: string; value?: string; message?: string }> {
     // Create or get chat
     let chat = opts.chatId ? this.chatRepo.getChat(opts.chatId) : null;
+    const isNewChat = !chat;
     if (!chat) {
       chat = this.chatRepo.createChat({
         characterId: opts.characterId,
         samplerPresetId: 'default',
       });
+      await this.dispatchHook('session_start', { chatId: chat.id, characterId: opts.characterId ?? null });
     }
     const chatId = chat.id;
 
@@ -508,6 +546,12 @@ export class ChatService {
     this.messageRepo.addMessage(chatId, {
       role: 'user',
       content: opts.message,
+    });
+    await this.dispatchHook('message_received', {
+      chatId,
+      characterId: opts.characterId ?? chat.characterId ?? null,
+      message: opts.message,
+      isNewChat,
     });
 
     // Run auto-capture on user message
@@ -627,6 +671,17 @@ export class ChatService {
       }
     }
 
+    await this.dispatchHook('before_generation', {
+      chatId,
+      characterId: characterId ?? null,
+      message: triggerResult.messageContent,
+    });
+    await this.dispatchHook('message_sending', {
+      chatId,
+      characterId: characterId ?? null,
+      message: triggerResult.messageContent,
+    });
+
     // Stream pipeline
     let fullContent = '';
     logger.info('Chat pipeline executing', { chatId, messageCount: trimmedHistory.length });
@@ -657,6 +712,12 @@ export class ChatService {
       'after_generation', finalContent, chatId, characterId ?? undefined, history.length
     );
     finalContent = postGenTrigger.messageContent;
+
+    await this.dispatchHook('after_generation', {
+      chatId,
+      characterId: characterId ?? null,
+      response: finalContent,
+    });
 
     // Store assistant message with the full content
     if (finalContent) {

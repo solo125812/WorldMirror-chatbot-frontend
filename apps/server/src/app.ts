@@ -20,8 +20,9 @@ import { triggerRoutes } from './api/routes/triggers.js';
 import { pluginRoutes } from './api/routes/plugins.js';
 import { extensionRoutes } from './api/routes/extensions.js';
 import { indexerRoutes } from './api/routes/indexer.js';
+import { diagnosticsRoutes } from './api/routes/diagnostics.js';
 import { createContainer } from './di/container.js';
-import { logger } from '@chatbot/utils';
+import { logger, AppError } from '@chatbot/utils';
 
 export async function buildApp() {
   // Initialize DI container
@@ -57,13 +58,39 @@ export async function buildApp() {
   await app.register(pluginRoutes);
   await app.register(extensionRoutes);
   await app.register(indexerRoutes);
+  // Phase 6
+  await app.register(diagnosticsRoutes);
 
-  // Global error handler
+  // Global error handler with AppError support
   app.setErrorHandler((error, _request, reply) => {
-    const err = error as Error & { statusCode?: number };
+    if (error instanceof AppError) {
+      logger.warn(`AppError: ${error.message}`, {
+        code: error.code,
+        statusCode: error.statusCode,
+      });
+      return reply.status(error.statusCode).send(error.toJSON());
+    }
+
+    const err = error as Error & { statusCode?: number; validation?: unknown };
+
+    // Fastify validation errors
+    if (err.validation) {
+      logger.warn('Validation error', { message: err.message });
+      return reply.status(400).send({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: err.message,
+        },
+      });
+    }
+
+    // Unhandled errors
     logger.error('Unhandled error', { message: err.message, stack: err.stack });
     reply.status(err.statusCode ?? 500).send({
-      error: err.message ?? 'Internal Server Error',
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: err.message ?? 'Internal Server Error',
+      },
     });
   });
 

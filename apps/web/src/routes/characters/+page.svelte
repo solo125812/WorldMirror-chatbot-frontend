@@ -5,6 +5,7 @@
   import CharacterPanel from '$lib/components/characters/CharacterPanel.svelte';
   import CharacterEditor from '$lib/components/characters/CharacterEditor.svelte';
   import CharacterCardImporter from '$lib/components/characters/CharacterCardImporter.svelte';
+  import { untrack } from 'svelte';
 
   interface Character {
     id: string;
@@ -111,7 +112,7 @@
 
   // Load on mount
   $effect(() => {
-    loadCharacters();
+    untrack(() => { loadCharacters(); });
   });
 </script>
 

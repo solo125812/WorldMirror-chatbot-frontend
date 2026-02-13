@@ -1,0 +1,21 @@
+{
+  "name": "@chatbot/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "typecheck": "tsc --noEmit",
+    "lint": "echo 'lint placeholder'"
+  },
+  "dependencies": {
+    "@chatbot/types": "workspace:*",
+    "@tauri-apps/api": "^2.2.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.2.0",
+    "@types/node": "^22.13.4",
+    "typescript": "^5.7.3"
+  }
+}

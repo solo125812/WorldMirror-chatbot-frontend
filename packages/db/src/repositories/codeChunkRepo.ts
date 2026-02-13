@@ -13,17 +13,29 @@ export class CodeChunkRepo {
     const id = randomUUID();
     const now = new Date().toISOString();
     this.db.prepare(`
-      INSERT INTO code_chunks (id, document_id, file_path, language, content, line_start, line_end, hash, embedding_ref, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
-    `).run(id, data.documentId, data.filePath, data.language, data.content, data.lineStart, data.lineEnd, data.hash, now);
+      INSERT INTO code_chunks (id, document_id, workspace_path, file_path, language, content, line_start, line_end, hash, file_hash, embedding_ref, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+    `).run(
+      id,
+      data.documentId,
+      data.workspacePath,
+      data.filePath,
+      data.language,
+      data.content,
+      data.lineStart,
+      data.lineEnd,
+      data.hash,
+      data.fileHash,
+      now,
+    );
     return this.get(id)!;
   }
 
   createBatch(chunks: CreateCodeChunkPayload[]): CodeChunk[] {
     const now = new Date().toISOString();
     const stmt = this.db.prepare(`
-      INSERT INTO code_chunks (id, document_id, file_path, language, content, line_start, line_end, hash, embedding_ref, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+      INSERT INTO code_chunks (id, document_id, workspace_path, file_path, language, content, line_start, line_end, hash, file_hash, embedding_ref, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
     `);
 
     const ids: string[] = [];
@@ -31,7 +43,19 @@ export class CodeChunkRepo {
       for (const chunk of items) {
         const id = randomUUID();
         ids.push(id);
-        stmt.run(id, chunk.documentId, chunk.filePath, chunk.language, chunk.content, chunk.lineStart, chunk.lineEnd, chunk.hash, now);
+        stmt.run(
+          id,
+          chunk.documentId,
+          chunk.workspacePath,
+          chunk.filePath,
+          chunk.language,
+          chunk.content,
+          chunk.lineStart,
+          chunk.lineEnd,
+          chunk.hash,
+          chunk.fileHash,
+          now,
+        );
       }
     });
 
@@ -59,8 +83,17 @@ export class CodeChunkRepo {
     return result.changes;
   }
 
-  deleteByFilePath(filePath: string): number {
+  deleteByFilePath(filePath: string, workspacePath?: string): number {
+    if (workspacePath) {
+      const result = this.db.prepare('DELETE FROM code_chunks WHERE file_path = ? AND workspace_path = ?').run(filePath, workspacePath);
+      return result.changes;
+    }
     const result = this.db.prepare('DELETE FROM code_chunks WHERE file_path = ?').run(filePath);
+    return result.changes;
+  }
+
+  deleteByWorkspace(workspacePath: string): number {
+    const result = this.db.prepare('DELETE FROM code_chunks WHERE workspace_path = ?').run(workspacePath);
     return result.changes;
   }
 
@@ -93,11 +126,13 @@ export class CodeChunkRepo {
   }
 
   /** Get all unique file paths with their hashes for incremental updates */
-  getFileHashes(): Map<string, string> {
-    const rows = this.db.prepare('SELECT DISTINCT file_path, hash FROM code_chunks').all() as any[];
+  getFileHashes(workspacePath?: string): Map<string, string> {
+    const rows = workspacePath
+      ? this.db.prepare("SELECT DISTINCT file_path, file_hash FROM code_chunks WHERE workspace_path = ? AND file_hash != ''").all(workspacePath) as any[]
+      : this.db.prepare("SELECT DISTINCT file_path, file_hash FROM code_chunks WHERE file_hash != ''").all() as any[];
     const map = new Map<string, string>();
     for (const row of rows) {
-      map.set(row.file_path, row.hash);
+      map.set(row.file_path, row.file_hash);
     }
     return map;
   }
@@ -106,12 +141,14 @@ export class CodeChunkRepo {
     return {
       id: row.id,
       documentId: row.document_id,
+      workspacePath: row.workspace_path ?? '',
       filePath: row.file_path,
       language: row.language,
       content: row.content,
       lineStart: row.line_start,
       lineEnd: row.line_end,
       hash: row.hash,
+      fileHash: row.file_hash ?? '',
       embeddingRef: row.embedding_ref,
       createdAt: row.created_at,
     };
