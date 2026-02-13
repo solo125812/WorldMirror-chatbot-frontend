@@ -87,7 +87,7 @@ export async function streamChat(
           onToken?.(parsed.value ?? '');
           break;
         case 'done':
-          onDone?.(responseChatId);
+          onDone?.(parsed.chatId ?? responseChatId);
           break;
         case 'error':
           onError?.(parsed.message ?? 'Unknown error');

@@ -3,12 +3,13 @@
  * Centralizes service creation and wiring for the server
  */
 
-import { ProviderRegistry, MockProvider, ChatPipeline } from '@chatbot/core';
+import { ProviderRegistry, MockProvider, AnthropicProvider, OllamaProvider, ChatPipeline } from '@chatbot/core';
 import { createDatabase, resetDatabase, runMigrations, ChatRepo, MessageRepo, CharacterRepo, SamplerPresetRepo } from '@chatbot/db';
 import type { DatabaseClient } from '@chatbot/db';
 import { ConfigService } from '../services/configService.js';
 import { ChatService } from '../services/chatService.js';
-import { resolve } from 'node:path';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export interface Container {
   providerRegistry: ProviderRegistry;
@@ -27,9 +28,11 @@ let container: Container | null = null;
 export function createContainer(): Container {
   if (container) return container;
 
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+
   // Initialize database and run migrations
   const dbClient = createDatabase();
-  const migrationsDir = resolve(import.meta.dirname ?? __dirname, '../../migrations');
+  const migrationsDir = resolve(__dirname, '../../migrations');
   runMigrations(dbClient.db, migrationsDir);
 
   // Create repositories
@@ -38,16 +41,45 @@ export function createContainer(): Container {
   const characterRepo = new CharacterRepo(dbClient.db);
   const samplerPresetRepo = new SamplerPresetRepo(dbClient.db);
 
-  // Create provider registry and register mock provider
+  // Create config service
+  const configService = new ConfigService();
+
+  // Create provider registry and register providers from config
   const providerRegistry = new ProviderRegistry();
-  providerRegistry.register(new MockProvider());
+  const providerConfigs = configService.get().providers ?? [];
+
+  for (const provider of providerConfigs) {
+    if (!provider.enabled) continue;
+
+    switch (provider.type) {
+      case 'mock':
+        providerRegistry.register(new MockProvider());
+        break;
+      case 'anthropic':
+        if (!provider.apiKey) {
+          // Skip if missing credentials
+          break;
+        }
+        providerRegistry.register(new AnthropicProvider({ apiKey: provider.apiKey, baseUrl: provider.baseUrl }));
+        break;
+      case 'ollama':
+        providerRegistry.register(new OllamaProvider({ baseUrl: provider.baseUrl }));
+        break;
+      default:
+        // Provider type not implemented in Phase 2
+        break;
+    }
+  }
+
+  if (providerRegistry.getAll().length === 0) {
+    providerRegistry.register(new MockProvider());
+  }
 
   // Create chat pipeline
   const chatPipeline = new ChatPipeline(providerRegistry);
 
   // Create services
-  const configService = new ConfigService();
-  const chatService = new ChatService(chatRepo, messageRepo, chatPipeline, configService);
+  const chatService = new ChatService(chatRepo, messageRepo, characterRepo, samplerPresetRepo, chatPipeline, configService);
 
   container = {
     providerRegistry,

@@ -9,6 +9,9 @@ import { ProviderRegistry } from '../providers/registry.js';
 
 export interface PipelineOptions {
   systemPrompt?: string;
+  persona?: string;
+  authorNote?: string;
+  assemblyOrder?: string[];
   modelId?: string;
   providerId?: string;
   completionParams?: Partial<CompletionParams>;
@@ -23,21 +26,62 @@ export class ChatPipeline {
    * 2. Conversation history
    * 3. User message (already in messages)
    */
-  assemblePrompt(messages: ChatMessage[], systemPrompt?: string): ChatMessage[] {
+  assemblePrompt(
+    messages: ChatMessage[],
+    options?: string | { systemPrompt?: string; persona?: string; authorNote?: string; assemblyOrder?: string[] }
+  ): ChatMessage[] {
+    const opts = typeof options === 'string' || options === undefined
+      ? { systemPrompt: options }
+      : options;
+
+    const systemPrompt = opts.systemPrompt;
+    const persona = opts.persona;
+    const authorNote = opts.authorNote;
+    const order = opts.assemblyOrder ?? ['system', 'history', 'user'];
+
     const assembled: ChatMessage[] = [];
 
-    // Add system prompt if provided
-    if (systemPrompt) {
-      assembled.push({
-        id: 'system',
-        role: 'system',
-        content: systemPrompt,
-        createdAt: new Date().toISOString(),
-      });
-    }
+    const lastUserIndex = (() => {
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') return i;
+      }
+      return -1;
+    })();
+    const userMessage = lastUserIndex >= 0 ? messages[lastUserIndex] : undefined;
+    const historyMessages = lastUserIndex >= 0
+      ? messages.filter((_, idx) => idx !== lastUserIndex)
+      : messages;
 
-    // Add conversation history and user message
-    assembled.push(...messages);
+    const makeSystem = (id: string, content: string): ChatMessage => ({
+      id,
+      role: 'system',
+      content,
+      createdAt: new Date().toISOString(),
+    });
+
+    for (const slot of order) {
+      switch (slot) {
+        case 'system':
+          if (systemPrompt) assembled.push(makeSystem('system', systemPrompt));
+          break;
+        case 'persona':
+          if (persona) assembled.push(makeSystem('persona', persona));
+          break;
+        case 'author':
+        case 'author_note':
+          if (authorNote) assembled.push(makeSystem('author', authorNote));
+          break;
+        case 'history':
+        case 'recent':
+          assembled.push(...historyMessages);
+          break;
+        case 'user':
+          if (userMessage) assembled.push(userMessage);
+          break;
+        default:
+          break;
+      }
+    }
 
     return assembled;
   }
@@ -52,7 +96,7 @@ export class ChatPipeline {
     messages: ChatMessage[],
     options: PipelineOptions = {}
   ): AsyncIterable<StreamChunk> {
-    const { systemPrompt, providerId, completionParams = {} } = options;
+    const { systemPrompt, persona, authorNote, assemblyOrder, providerId, modelId, completionParams = {} } = options;
 
     logger.info('Chat pipeline executing', {
       messageCount: messages.length,
@@ -61,13 +105,14 @@ export class ChatPipeline {
 
     try {
       // Step 1: Assemble prompt
-      const assembled = this.assemblePrompt(messages, systemPrompt);
+      const assembled = this.assemblePrompt(messages, { systemPrompt, persona, authorNote, assemblyOrder });
 
       // Step 2: Resolve provider
       const provider = this.registry.resolve(providerId);
 
       // Step 3: Stream response
       const params: CompletionParams = {
+        modelId,
         temperature: completionParams.temperature ?? 1.0,
         maxTokens: completionParams.maxTokens ?? 2048,
         ...completionParams,

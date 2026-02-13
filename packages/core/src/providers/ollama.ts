@@ -21,7 +21,7 @@ export class OllamaProvider implements LLMProvider {
         params: CompletionParams,
     ): AsyncIterable<StreamChunk> {
         const body = {
-            model: 'llama3.2',
+            model: params.modelId ?? 'llama3.2',
             messages: messages.map((m) => ({
                 role: m.role,
                 content: m.content,

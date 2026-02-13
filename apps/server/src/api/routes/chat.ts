@@ -36,37 +36,40 @@ export async function chatRoutes(app: FastifyInstance) {
    * Body: { chatId?: string, message: string, characterId?: string }
    */
   app.post('/chat/stream', async (request, reply) => {
-    const { chatService } = getContainer();
+    const { chatService, chatRepo } = getContainer();
     const body = request.body as { chatId?: string; message: string; characterId?: string };
 
     if (!body.message) {
       return reply.status(400).send({ error: 'message is required' });
     }
 
+    const ensuredChatId = body.chatId ?? chatRepo.createChat({
+      characterId: body.characterId,
+    }).id;
+
     // Set SSE headers
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
+      'X-Chat-Id': ensuredChatId,
     });
 
     // Stream response
     try {
-      let chatId: string | undefined;
       for await (const chunk of chatService.stream({
         message: body.message,
-        chatId: body.chatId,
+        chatId: ensuredChatId,
         characterId: body.characterId,
       })) {
         if (chunk.type === 'meta' && chunk.value) {
-          chatId = chunk.value;
           continue;
         }
         reply.raw.write(formatSSE(chunk as any));
       }
 
       // Send done event with chatId
-      reply.raw.write(formatSSE({ type: 'done' }));
+      reply.raw.write(formatSSE({ type: 'done', value: ensuredChatId }));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       reply.raw.write(formatSSE({ type: 'error', message: errorMessage }));

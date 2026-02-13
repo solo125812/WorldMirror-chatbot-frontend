@@ -4,6 +4,7 @@
 
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import { healthRoutes } from './api/routes/health.js';
 import { modelsRoutes } from './api/routes/models.js';
 import { configRoutes } from './api/routes/config.js';
@@ -27,6 +28,9 @@ export async function buildApp() {
     origin: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
+
+  // Register multipart for file uploads (character cards)
+  await app.register(multipart);
 
   // Register routes
   await app.register(healthRoutes);

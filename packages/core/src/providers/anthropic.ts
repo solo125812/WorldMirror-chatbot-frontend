@@ -157,7 +157,7 @@ export class AnthropicProvider implements LLMProvider {
         const conversationMessages = messages.filter((m) => m.role !== 'system');
 
         return {
-            model: 'claude-sonnet-4-20250514',
+            model: params.modelId ?? 'claude-sonnet-4-20250514',
             system: systemMessages.map((m) => m.content).join('\n\n') || params.systemPrompt || undefined,
             messages: conversationMessages.map((m) => ({
                 role: m.role === 'assistant' ? 'assistant' : 'user',

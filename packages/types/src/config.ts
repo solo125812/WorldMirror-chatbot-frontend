@@ -36,6 +36,17 @@ export type ProviderType =
 export interface PromptConfig {
   systemPrompt: string;
   assemblyOrder: string[];
+  regexRules?: RegexRule[];
+}
+
+export interface RegexRule {
+  id: string;
+  name: string;
+  pattern: string;
+  replacement: string;
+  scope: 'user_input' | 'ai_output';
+  flags?: string;
+  enabled: boolean;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -55,5 +66,6 @@ export const DEFAULT_CONFIG: AppConfig = {
   prompt: {
     systemPrompt: 'You are a helpful AI assistant.',
     assemblyOrder: ['system', 'history', 'user'],
+    regexRules: [],
   },
 };

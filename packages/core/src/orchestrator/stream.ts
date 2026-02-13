@@ -12,7 +12,7 @@ export function formatSSE(chunk: StreamChunk): string {
     case 'token':
       return `event: token\ndata: ${JSON.stringify({ value: chunk.value })}\n\n`;
     case 'done':
-      return `event: done\ndata: {}\n\n`;
+      return `event: done\ndata: ${JSON.stringify(chunk.value ? { chatId: chunk.value } : {})}\n\n`;
     case 'error':
       return `event: error\ndata: ${JSON.stringify({ message: chunk.message })}\n\n`;
     default:
@@ -44,7 +44,7 @@ export function parseSSE(raw: string): StreamChunk | null {
       case 'token':
         return { type: 'token', value: parsed.value };
       case 'done':
-        return { type: 'done' };
+        return parsed?.chatId ? { type: 'done', value: parsed.chatId } : { type: 'done' };
       case 'error':
         return { type: 'error', message: parsed.message };
       default:

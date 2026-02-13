@@ -3,7 +3,7 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import { getContainer } from '../di/container.js';
+import { getContainer } from '../../di/container.js';
 
 export async function chatHistoryRoutes(app: FastifyInstance): Promise<void> {
     /**

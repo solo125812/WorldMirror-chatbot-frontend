@@ -26,9 +26,20 @@ const ProviderConfigSchema = z.object({
   models: z.array(z.string()).optional(),
 });
 
+const RegexRuleSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  pattern: z.string(),
+  replacement: z.string(),
+  scope: z.enum(['user_input', 'ai_output']),
+  flags: z.string().optional(),
+  enabled: z.boolean(),
+});
+
 const PromptConfigSchema = z.object({
   systemPrompt: z.string().default('You are a helpful AI assistant.'),
   assemblyOrder: z.array(z.string()).default(['system', 'history', 'user']),
+  regexRules: z.array(RegexRuleSchema).default([]),
 });
 
 const AppConfigSchema = z.object({

@@ -15,6 +15,7 @@ export interface ModelInfo {
 }
 
 export interface CompletionParams {
+  modelId?: string;
   temperature?: number;
   maxTokens?: number;
   topP?: number;
