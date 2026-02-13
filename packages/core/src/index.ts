@@ -22,3 +22,19 @@ export type { RegexRule } from './orchestrator/regex.js';
 // Characters
 export { parseCharacterCard, extractCardFromPNG } from './characters/cardParser.js';
 export { exportToV2, exportToJSON } from './characters/cardExporter.js';
+
+// Phase 4: Lorebook
+export { activateLorebooks, formatLorebookSection } from './lorebook/activation.js';
+export type { LoadedLorebook } from './lorebook/activation.js';
+
+// Phase 4: Group Chat
+export { selectNextSpeaker } from './groupChat/turnSelection.js';
+
+// Phase 4: Skills
+export { SkillRegistry } from './skills/registry.js';
+export { resolveSkills, formatSkillsContext } from './skills/resolver.js';
+export type { ResolvedSkills } from './skills/resolver.js';
+
+// Phase 4: Triggers
+export { executeTriggers, createTriggerContext } from './triggers/engine.js';
+export type { TriggerEngineConfig } from './triggers/engine.js';

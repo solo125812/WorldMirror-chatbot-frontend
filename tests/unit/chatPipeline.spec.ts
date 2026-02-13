@@ -41,6 +41,46 @@ describe('ChatPipeline', () => {
     expect(assembled[0].role).toBe('user');
   });
 
+  it('should assemble prompt according to assembly order with all optional slots', () => {
+    const messages: ChatMessage[] = [
+      { id: '1', role: 'assistant', content: 'Earlier reply', createdAt: new Date().toISOString() },
+      { id: '2', role: 'user', content: 'Latest question', createdAt: new Date().toISOString() },
+    ];
+
+    const assembled = pipeline.assemblePrompt(messages, {
+      systemPrompt: 'System base',
+      persona: 'Persona block',
+      authorNote: 'Author note',
+      memoryContext: 'Memory block',
+      lorebookContext: 'Lorebook block',
+      skillsContext: 'Skills block',
+      assemblyOrder: [
+        'system',
+        'skills',
+        'persona',
+        'author',
+        'memory',
+        'lorebook',
+        'history',
+        'user',
+      ],
+    });
+
+    const contents = assembled.map((m) => m.content);
+    expect(contents).toEqual([
+      'System base',
+      'Skills block',
+      'Persona block',
+      'Author note',
+      'Memory block',
+      'Lorebook block',
+      'Earlier reply',
+      'Latest question',
+    ]);
+    expect(assembled[0].role).toBe('system');
+    expect(assembled[assembled.length - 1].role).toBe('user');
+  });
+
   it('should stream tokens from mock provider', async () => {
     const messages: ChatMessage[] = [
       { id: '1', role: 'user', content: 'Hello', createdAt: new Date().toISOString() },

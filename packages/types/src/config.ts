@@ -10,6 +10,14 @@ export interface AppConfig {
   prompt: PromptConfig;
   activeModelId?: string;
   memory?: MemoryConfig;
+  features?: FeatureFlags;
+}
+
+export interface FeatureFlags {
+  lorebook?: boolean;
+  groupChat?: boolean;
+  skills?: boolean;
+  triggers?: boolean;
 }
 
 export interface ServerConfig {
@@ -94,4 +102,10 @@ export const DEFAULT_CONFIG: AppConfig = {
     regexRules: [],
   },
   memory: {},
+  features: {
+    lorebook: false,
+    groupChat: false,
+    skills: false,
+    triggers: false,
+  },
 };

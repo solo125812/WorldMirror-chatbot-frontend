@@ -1,13 +1,28 @@
 /**
  * Chat Service — orchestrates chat operations
  * Phase 3: integrates memory search, auto-capture, and context compaction
+ * Phase 4: integrates lorebook activation, skills injection, and trigger engine
  */
 
 import { ChatRepo, MessageRepo, CharacterRepo, SamplerPresetRepo } from '@chatbot/db';
-import type { ChatPipeline } from '@chatbot/core';
+import type { LorebookRepo, LorebookBindingRepo, LorebookEntryRepo, VariableRepo, RegexRuleRepo, TriggerRepo } from '@chatbot/db';
+import type { ChatPipeline, SkillRegistry } from '@chatbot/core';
 import type { ConfigService } from './configService.js';
 import type { ChatMessage } from '@chatbot/types';
-import { collectStream, expandMacros, applyRegexRules, allocateBudget, trimHistory } from '@chatbot/core';
+import {
+  collectStream,
+  expandMacros,
+  applyRegexRules,
+  allocateBudget,
+  trimHistory,
+  activateLorebooks,
+  formatLorebookSection,
+  resolveSkills,
+  formatSkillsContext,
+  executeTriggers,
+  createTriggerContext,
+} from '@chatbot/core';
+import type { LoadedLorebook } from '@chatbot/core';
 import type { MemorySearch, AutoCaptureService, ContextCompactor } from '@chatbot/memory';
 import { formatMemoryContext } from '@chatbot/memory';
 import { logger } from '@chatbot/utils';
@@ -28,6 +43,14 @@ export class ChatService {
     private memorySearch?: MemorySearch,
     private autoCaptureService?: AutoCaptureService,
     private contextCompactor?: ContextCompactor,
+    // Phase 4 dependencies (optional for backward compat)
+    private lorebookRepo?: LorebookRepo,
+    private lorebookBindingRepo?: LorebookBindingRepo,
+    private lorebookEntryRepo?: LorebookEntryRepo,
+    private skillRegistry?: SkillRegistry,
+    private variableRepo?: VariableRepo,
+    private regexRuleRepo?: RegexRuleRepo,
+    private triggerRepo?: TriggerRepo,
   ) { }
 
   private get contextWindow(): number {
@@ -121,6 +144,168 @@ export class ChatService {
   }
 
   /**
+   * Phase 4: Get lorebook context by activating lorebooks bound to the current character/chat.
+   */
+  private getLorebookContext(
+    messages: ChatMessage[],
+    characterId?: string,
+    chatId?: string,
+    character?: { description?: string; personality?: string; scenario?: string; systemPrompt?: string },
+    authorNote?: string,
+  ): string {
+    const appConfig = this.config.get();
+    if (!appConfig.features?.lorebook) return '';
+    if (!this.lorebookBindingRepo || !this.lorebookEntryRepo || !this.lorebookRepo) return '';
+
+    try {
+      // Get bindings for this context
+      const bindings = this.lorebookBindingRepo.listForContext(characterId ?? null, chatId ?? null);
+
+      if (bindings.length === 0) return '';
+
+      // Load lorebooks with their entries using the actual lorebook data
+      const loadedLorebooks: LoadedLorebook[] = [];
+      const lorebookIds = [...new Set(bindings.map((b) => b.lorebookId))];
+
+      for (const lorebookId of lorebookIds) {
+        const lorebook = this.lorebookRepo!.get(lorebookId);
+        if (!lorebook) continue;
+        const entries = this.lorebookEntryRepo.listByLorebook(lorebookId);
+        loadedLorebooks.push({ lorebook, entries });
+      }
+
+      if (loadedLorebooks.length === 0) return '';
+
+      const result = activateLorebooks(loadedLorebooks, {
+        messages,
+        characterFields: character ? {
+          description: character.description,
+          personality: character.personality,
+          scenario: character.scenario,
+          systemPrompt: character.systemPrompt,
+        } : undefined,
+        authorNote,
+      });
+
+      if (result.activatedCount === 0) return '';
+
+      // Combine all activated sections into a single context string
+      const allSections: string[] = [];
+      for (const [, sections] of Object.entries(result.sections)) {
+        if (sections.length > 0) {
+          allSections.push(formatLorebookSection(sections));
+        }
+      }
+
+      return allSections.join('\n\n');
+    } catch (error) {
+      logger.warn('Lorebook activation failed', error);
+      return '';
+    }
+  }
+
+  /**
+   * Phase 4: Get skills context.
+   */
+  private getSkillsContext(): string {
+    const appConfig = this.config.get();
+    if (!appConfig.features?.skills) return '';
+    if (!this.skillRegistry) return '';
+
+    try {
+      const resolved = resolveSkills(this.skillRegistry, appConfig);
+      return formatSkillsContext(resolved);
+    } catch (error) {
+      logger.warn('Skills resolution failed', error);
+      return '';
+    }
+  }
+
+  /**
+   * Phase 4: Run triggers for an activation point.
+   */
+  private runTriggers(
+    activation: 'before_generation' | 'after_generation' | 'on_user_input' | 'on_display' | 'manual',
+    messageContent: string,
+    chatId?: string,
+    characterId?: string,
+    messageCount: number = 0,
+  ): { messageContent: string; injections: Array<{ content: string; position: string }>; stopGeneration: boolean } {
+    const appConfig = this.config.get();
+    if (!appConfig.features?.triggers) {
+      return { messageContent, injections: [], stopGeneration: false };
+    }
+    if (!this.triggerRepo || !this.variableRepo) {
+      return { messageContent, injections: [], stopGeneration: false };
+    }
+
+    try {
+      const triggers = this.triggerRepo.listForActivation(activation as any, characterId);
+      if (triggers.length === 0) {
+        return { messageContent, injections: [], stopGeneration: false };
+      }
+
+      const context = createTriggerContext({
+        messageContent,
+        chatId,
+        characterId,
+        messageCount,
+      });
+
+      const varRepo = this.variableRepo;
+      const trigRepo = this.triggerRepo;
+      const regexRepo = this.regexRuleRepo;
+
+      executeTriggers(triggers, activation, context, {
+        getVariable: (scope, key, cId) => varRepo.getValue(scope, key, cId ?? null),
+        setVariable: (scope, key, value, cId) => varRepo.set(scope, key, value, cId ?? null),
+        getTrigger: (id) => trigRepo.get(id),
+        getRegexRule: regexRepo ? (id) => regexRepo.get(id) : undefined,
+        maxTriggerDepth: 5,
+      });
+
+      return {
+        messageContent: context.messageContent,
+        injections: context.injections,
+        stopGeneration: context.stopGeneration,
+      };
+    } catch (error) {
+      logger.warn('Trigger execution failed', error);
+      return { messageContent, injections: [], stopGeneration: false };
+    }
+  }
+
+  /**
+   * Phase 4: Apply DB-backed regex rules for a given placement.
+   */
+  private applyDbRegexRules(text: string, placement: 'user_input' | 'ai_output' | 'prompt' | 'display', characterId?: string): string {
+    const appConfig = this.config.get();
+    if (!appConfig.features?.triggers) return text;
+    if (!this.regexRuleRepo) return text;
+
+    try {
+      const rules = this.regexRuleRepo.listForContext(characterId ?? null);
+      const applicableRules = rules.filter((r) => r.placement.includes(placement as any) && r.enabled);
+
+      let result = text;
+      for (const rule of applicableRules) {
+        try {
+          const flags = rule.flags ?? 'g';
+          const regex = new RegExp(rule.findRegex, flags);
+          result = result.replace(regex, rule.replaceString);
+        } catch {
+          // Invalid regex — skip
+        }
+      }
+
+      return result;
+    } catch (error) {
+      logger.warn('DB regex application failed', error);
+      return text;
+    }
+  }
+
+  /**
    * Send a message and get a full (non-streaming) response.
    */
   async send(opts: {
@@ -172,6 +357,30 @@ export class ChatService {
     // Phase 3: Retrieve memory context
     const memoryContext = await this.getMemoryContext(opts.message, characterId ?? undefined, chatId);
 
+    // Phase 4: Lorebook activation
+    const lorebookContext = this.getLorebookContext(
+      history, characterId ?? undefined, chatId,
+      character ?? undefined, authorNote
+    );
+
+    // Phase 4: Skills injection
+    const skillsContext = this.getSkillsContext();
+
+    // Phase 4: Run triggers on user message
+    const triggerResult = this.runTriggers(
+      'on_user_input', opts.message, chatId, characterId ?? undefined, history.length
+    );
+    if (triggerResult.stopGeneration) {
+      // Return the last assistant message if generation is stopped
+      const lastAssistant = history.filter((m) => m.role === 'assistant').pop();
+      return { chatId, message: lastAssistant ?? history[history.length - 1] };
+    }
+
+    // Phase 4: Pre-generation triggers
+    const preGenTrigger = this.runTriggers(
+      'before_generation', triggerResult.messageContent, chatId, characterId ?? undefined, history.length
+    );
+
     const regexRules = appConfig.prompt.regexRules ?? [];
 
     const promptMessages = history.map((m) => ({ ...m }));
@@ -180,6 +389,8 @@ export class ChatService {
         let content = promptMessages[i].content;
         content = expandMacros(content, macroCtx);
         content = applyRegexRules(content, regexRules, 'user_input');
+        // Phase 4: Apply DB regex rules
+        content = this.applyDbRegexRules(content, 'user_input', characterId ?? undefined);
         promptMessages[i] = { ...promptMessages[i], content };
         break;
       }
@@ -214,10 +425,29 @@ export class ChatService {
     });
     const trimmedHistory = trimHistory(processedMessages, budget.history);
 
-    // Build assembly order with memory slot
-    const effectiveOrder = assemblyOrder.includes('memory')
-      ? assemblyOrder
-      : [...assemblyOrder.slice(0, -1), 'memory', ...assemblyOrder.slice(-1)];
+    // Build assembly order with memory/lorebook/skills slots
+    let effectiveOrder = [...assemblyOrder];
+    if (!effectiveOrder.includes('memory')) {
+      effectiveOrder = [...effectiveOrder.slice(0, -1), 'memory', ...effectiveOrder.slice(-1)];
+    }
+    if (!effectiveOrder.includes('lorebook') && lorebookContext) {
+      // Insert lorebook before history
+      const histIdx = effectiveOrder.indexOf('history');
+      if (histIdx >= 0) {
+        effectiveOrder.splice(histIdx, 0, 'lorebook');
+      } else {
+        effectiveOrder = [...effectiveOrder.slice(0, -1), 'lorebook', ...effectiveOrder.slice(-1)];
+      }
+    }
+    if (!effectiveOrder.includes('skills') && skillsContext) {
+      // Insert skills after system
+      const sysIdx = effectiveOrder.indexOf('system');
+      if (sysIdx >= 0) {
+        effectiveOrder.splice(sysIdx + 1, 0, 'skills');
+      } else {
+        effectiveOrder.unshift('skills');
+      }
+    }
 
     // Execute pipeline
     const content = await collectStream(
@@ -226,13 +456,23 @@ export class ChatService {
         persona,
         authorNote,
         memoryContext,
+        lorebookContext,
+        skillsContext,
         assemblyOrder: effectiveOrder,
         modelId: completionParams.modelId,
         completionParams,
       })
     );
 
-    const finalContent = applyRegexRules(content, regexRules, 'ai_output');
+    let finalContent = applyRegexRules(content, regexRules, 'ai_output');
+    // Phase 4: Apply DB regex rules to output
+    finalContent = this.applyDbRegexRules(finalContent, 'ai_output', characterId ?? undefined);
+
+    // Phase 4: Post-generation triggers
+    const postGenTrigger = this.runTriggers(
+      'after_generation', finalContent, chatId, characterId ?? undefined, history.length
+    );
+    finalContent = postGenTrigger.messageContent;
 
     // Store assistant message
     const assistantMsg = this.messageRepo.addMessage(chatId, {
@@ -298,6 +538,29 @@ export class ChatService {
     // Phase 3: Retrieve memory context
     const memoryContext = await this.getMemoryContext(opts.message, characterId ?? undefined, chatId);
 
+    // Phase 4: Lorebook activation
+    const lorebookContext = this.getLorebookContext(
+      history, characterId ?? undefined, chatId,
+      character ?? undefined, authorNote
+    );
+
+    // Phase 4: Skills injection
+    const skillsContext = this.getSkillsContext();
+
+    // Phase 4: Run triggers on user message
+    const triggerResult = this.runTriggers(
+      'on_user_input', opts.message, chatId, characterId ?? undefined, history.length
+    );
+    if (triggerResult.stopGeneration) {
+      yield { type: 'meta', value: chatId };
+      return;
+    }
+
+    // Phase 4: Pre-generation triggers
+    this.runTriggers(
+      'before_generation', triggerResult.messageContent, chatId, characterId ?? undefined, history.length
+    );
+
     const regexRules = appConfig.prompt.regexRules ?? [];
 
     const promptMessages = history.map((m) => ({ ...m }));
@@ -306,6 +569,8 @@ export class ChatService {
         let content = promptMessages[i].content;
         content = expandMacros(content, macroCtx);
         content = applyRegexRules(content, regexRules, 'user_input');
+        // Phase 4: Apply DB regex rules
+        content = this.applyDbRegexRules(content, 'user_input', characterId ?? undefined);
         promptMessages[i] = { ...promptMessages[i], content };
         break;
       }
@@ -340,10 +605,27 @@ export class ChatService {
     });
     const trimmedHistory = trimHistory(processedMessages, budget.history);
 
-    // Build assembly order with memory slot
-    const effectiveOrder = assemblyOrder.includes('memory')
-      ? assemblyOrder
-      : [...assemblyOrder.slice(0, -1), 'memory', ...assemblyOrder.slice(-1)];
+    // Build assembly order with memory/lorebook/skills slots
+    let effectiveOrder = [...assemblyOrder];
+    if (!effectiveOrder.includes('memory')) {
+      effectiveOrder = [...effectiveOrder.slice(0, -1), 'memory', ...effectiveOrder.slice(-1)];
+    }
+    if (!effectiveOrder.includes('lorebook') && lorebookContext) {
+      const histIdx = effectiveOrder.indexOf('history');
+      if (histIdx >= 0) {
+        effectiveOrder.splice(histIdx, 0, 'lorebook');
+      } else {
+        effectiveOrder = [...effectiveOrder.slice(0, -1), 'lorebook', ...effectiveOrder.slice(-1)];
+      }
+    }
+    if (!effectiveOrder.includes('skills') && skillsContext) {
+      const sysIdx = effectiveOrder.indexOf('system');
+      if (sysIdx >= 0) {
+        effectiveOrder.splice(sysIdx + 1, 0, 'skills');
+      } else {
+        effectiveOrder.unshift('skills');
+      }
+    }
 
     // Stream pipeline
     let fullContent = '';
@@ -354,6 +636,8 @@ export class ChatService {
       persona,
       authorNote,
       memoryContext,
+      lorebookContext,
+      skillsContext,
       assemblyOrder: effectiveOrder,
       modelId: completionParams.modelId,
       completionParams,
@@ -364,7 +648,15 @@ export class ChatService {
       yield chunk;
     }
 
-    const finalContent = applyRegexRules(fullContent, regexRules, 'ai_output');
+    let finalContent = applyRegexRules(fullContent, regexRules, 'ai_output');
+    // Phase 4: Apply DB regex rules to output
+    finalContent = this.applyDbRegexRules(finalContent, 'ai_output', characterId ?? undefined);
+
+    // Phase 4: Post-generation triggers
+    const postGenTrigger = this.runTriggers(
+      'after_generation', finalContent, chatId, characterId ?? undefined, history.length
+    );
+    finalContent = postGenTrigger.messageContent;
 
     // Store assistant message with the full content
     if (finalContent) {

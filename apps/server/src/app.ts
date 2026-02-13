@@ -13,6 +13,10 @@ import { characterRoutes } from './api/routes/characters.js';
 import { chatHistoryRoutes } from './api/routes/chats.js';
 import { samplerPresetRoutes } from './api/routes/samplerPresets.js';
 import { memoryRoutes } from './api/routes/memory.js';
+import { lorebookRoutes } from './api/routes/lorebooks.js';
+import { groupRoutes } from './api/routes/groups.js';
+import { skillRoutes } from './api/routes/skills.js';
+import { triggerRoutes } from './api/routes/triggers.js';
 import { createContainer } from './di/container.js';
 import { logger } from '@chatbot/utils';
 
@@ -42,6 +46,10 @@ export async function buildApp() {
   await app.register(chatHistoryRoutes);
   await app.register(samplerPresetRoutes);
   await app.register(memoryRoutes);
+  await app.register(lorebookRoutes);
+  await app.register(groupRoutes);
+  await app.register(skillRoutes);
+  await app.register(triggerRoutes);
 
   // Global error handler
   app.setErrorHandler((error, _request, reply) => {

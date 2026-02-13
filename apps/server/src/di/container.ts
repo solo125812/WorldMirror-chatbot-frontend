@@ -3,8 +3,8 @@
  * Centralizes service creation and wiring for the server
  */
 
-import { ProviderRegistry, MockProvider, AnthropicProvider, OllamaProvider, ChatPipeline } from '@chatbot/core';
-import { createDatabase, resetDatabase, runMigrations, ChatRepo, MessageRepo, CharacterRepo, SamplerPresetRepo, MemoryRepo, DocumentRepo, DocChunkRepo } from '@chatbot/db';
+import { ProviderRegistry, MockProvider, AnthropicProvider, OllamaProvider, ChatPipeline, SkillRegistry } from '@chatbot/core';
+import { createDatabase, resetDatabase, runMigrations, ChatRepo, MessageRepo, CharacterRepo, SamplerPresetRepo, MemoryRepo, DocumentRepo, DocChunkRepo, LorebookRepo, LorebookEntryRepo, LorebookBindingRepo, GroupChatRepo, VariableRepo, RegexRuleRepo, TriggerRepo } from '@chatbot/db';
 import type { DatabaseClient } from '@chatbot/db';
 import {
   createEmbeddingProvider,
@@ -40,6 +40,15 @@ export interface Container {
   documentIngestor: DocumentIngestor;
   autoCaptureService: AutoCaptureService;
   contextCompactor: ContextCompactor;
+  // Phase 4: Lorebook, Group Chat, Skills, Triggers
+  lorebookRepo: LorebookRepo;
+  lorebookEntryRepo: LorebookEntryRepo;
+  lorebookBindingRepo: LorebookBindingRepo;
+  groupChatRepo: GroupChatRepo;
+  variableRepo: VariableRepo;
+  regexRuleRepo: RegexRuleRepo;
+  triggerRepo: TriggerRepo;
+  skillRegistry: SkillRegistry;
   configService: ConfigService;
   chatService: ChatService;
 }
@@ -66,6 +75,15 @@ export function createContainer(): Container {
   const memoryRepo = new MemoryRepo(dbClient.db);
   const documentRepo = new DocumentRepo(dbClient.db);
   const docChunkRepo = new DocChunkRepo(dbClient.db);
+
+  // Phase 4: Lorebook, Group Chat, Triggers repositories
+  const lorebookRepo = new LorebookRepo(dbClient.db);
+  const lorebookEntryRepo = new LorebookEntryRepo(dbClient.db);
+  const lorebookBindingRepo = new LorebookBindingRepo(dbClient.db);
+  const groupChatRepo = new GroupChatRepo(dbClient.db);
+  const variableRepo = new VariableRepo(dbClient.db);
+  const regexRuleRepo = new RegexRuleRepo(dbClient.db);
+  const triggerRepo = new TriggerRepo(dbClient.db);
 
   // Create config service
   const configService = new ConfigService();
@@ -110,12 +128,12 @@ export function createContainer(): Container {
 
   // Embedding provider — defaults to local fallback
   const embeddingConfig = {
-    provider: 'local',
+    provider: 'local' as const,
     model: 'local-fallback',
     dimensions: 384,
     ...(memoryConfig.embedding ?? {}),
   };
-  const embeddingProvider = createEmbeddingProvider(embeddingConfig);
+  const embeddingProvider = createEmbeddingProvider(embeddingConfig as any);
 
   // Vector store — persisted to data/vectors.json
   const dataDir = process.env.APP_DATA_DIR
@@ -181,6 +199,15 @@ export function createContainer(): Container {
     memoryConfig.compaction
   );
 
+  // Phase 4: Skills registry
+  const skillsDirs: Array<{ path: string; source: 'bundled' | 'managed' | 'workspace' }> = [];
+  const bundledSkillsPath = resolve(__dirname, '../../../../skills');
+  skillsDirs.push({ path: bundledSkillsPath, source: 'bundled' });
+  // Add workspace skills dir if configured
+  const workspaceSkillsPath = resolve(dataDir, 'skills');
+  skillsDirs.push({ path: workspaceSkillsPath, source: 'workspace' });
+  const skillRegistry = new SkillRegistry(skillsDirs);
+
   // Create services
   const chatService = new ChatService(
     chatRepo,
@@ -191,7 +218,15 @@ export function createContainer(): Container {
     configService,
     memorySearch,
     autoCaptureService,
-    contextCompactor
+    contextCompactor,
+    // Phase 4 dependencies
+    lorebookRepo,
+    lorebookBindingRepo,
+    lorebookEntryRepo,
+    skillRegistry,
+    variableRepo,
+    regexRuleRepo,
+    triggerRepo,
   );
 
   container = {
@@ -212,6 +247,15 @@ export function createContainer(): Container {
     documentIngestor,
     autoCaptureService,
     contextCompactor,
+    // Phase 4
+    lorebookRepo,
+    lorebookEntryRepo,
+    lorebookBindingRepo,
+    groupChatRepo,
+    variableRepo,
+    regexRuleRepo,
+    triggerRepo,
+    skillRegistry,
     configService,
     chatService,
   };

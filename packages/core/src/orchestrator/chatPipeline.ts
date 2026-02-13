@@ -12,6 +12,8 @@ export interface PipelineOptions {
   persona?: string;
   authorNote?: string;
   memoryContext?: string;
+  lorebookContext?: string;
+  skillsContext?: string;
   assemblyOrder?: string[];
   modelId?: string;
   providerId?: string;
@@ -29,7 +31,7 @@ export class ChatPipeline {
    */
   assemblePrompt(
     messages: ChatMessage[],
-    options?: string | { systemPrompt?: string; persona?: string; authorNote?: string; memoryContext?: string; assemblyOrder?: string[] }
+    options?: string | { systemPrompt?: string; persona?: string; authorNote?: string; memoryContext?: string; lorebookContext?: string; skillsContext?: string; assemblyOrder?: string[] }
   ): ChatMessage[] {
     const opts = typeof options === 'string' || options === undefined
       ? { systemPrompt: options }
@@ -39,6 +41,8 @@ export class ChatPipeline {
     const persona = opts.persona;
     const authorNote = opts.authorNote;
     const memoryContext = opts.memoryContext;
+    const lorebookContext = opts.lorebookContext;
+    const skillsContext = opts.skillsContext;
     const order = opts.assemblyOrder ?? ['system', 'history', 'user'];
 
     const assembled: ChatMessage[] = [];
@@ -76,6 +80,13 @@ export class ChatPipeline {
         case 'memory':
           if (memoryContext) assembled.push(makeSystem('memory', memoryContext));
           break;
+        case 'lorebook':
+        case 'world_info':
+          if (lorebookContext) assembled.push(makeSystem('lorebook', lorebookContext));
+          break;
+        case 'skills':
+          if (skillsContext) assembled.push(makeSystem('skills', skillsContext));
+          break;
         case 'history':
         case 'recent':
           assembled.push(...historyMessages);
@@ -101,7 +112,7 @@ export class ChatPipeline {
     messages: ChatMessage[],
     options: PipelineOptions = {}
   ): AsyncIterable<StreamChunk> {
-    const { systemPrompt, persona, authorNote, memoryContext, assemblyOrder, providerId, modelId, completionParams = {} } = options;
+    const { systemPrompt, persona, authorNote, memoryContext, lorebookContext, skillsContext, assemblyOrder, providerId, modelId, completionParams = {} } = options;
 
     logger.info('Chat pipeline executing', {
       messageCount: messages.length,
@@ -110,7 +121,7 @@ export class ChatPipeline {
 
     try {
       // Step 1: Assemble prompt
-      const assembled = this.assemblePrompt(messages, { systemPrompt, persona, authorNote, memoryContext, assemblyOrder });
+      const assembled = this.assemblePrompt(messages, { systemPrompt, persona, authorNote, memoryContext, lorebookContext, skillsContext, assemblyOrder });
 
       // Step 2: Resolve provider
       const provider = this.registry.resolve(providerId);

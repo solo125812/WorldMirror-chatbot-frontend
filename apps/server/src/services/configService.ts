@@ -97,12 +97,21 @@ const MemoryConfigSchema = z.object({
     .optional(),
 });
 
+// Phase 4: Feature flags
+const FeatureFlagsSchema = z.object({
+  lorebook: z.boolean().optional(),
+  groupChat: z.boolean().optional(),
+  skills: z.boolean().optional(),
+  triggers: z.boolean().optional(),
+});
+
 const AppConfigSchema = z.object({
   server: ServerConfigSchema,
   providers: z.array(ProviderConfigSchema),
   prompt: PromptConfigSchema,
   activeModelId: z.string().optional(),
   memory: MemoryConfigSchema.optional(),
+  features: FeatureFlagsSchema.optional(),
 });
 
 export class ConfigService {
@@ -128,6 +137,7 @@ export class ConfigService {
       prompt: { ...this.config.prompt, ...(patch.prompt ?? {}) },
       providers: patch.providers ?? this.config.providers,
       memory: { ...(this.config.memory ?? {}), ...(patch.memory ?? {}) },
+      features: { ...(this.config.features ?? {}), ...(patch.features ?? {}) },
     };
 
     this.config = this.validate(merged);
