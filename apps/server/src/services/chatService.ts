@@ -6,7 +6,8 @@
 
 import { ChatRepo, MessageRepo, CharacterRepo, SamplerPresetRepo } from '@chatbot/db';
 import type { LorebookRepo, LorebookBindingRepo, LorebookEntryRepo, VariableRepo, RegexRuleRepo, TriggerRepo } from '@chatbot/db';
-import type { ChatPipeline, SkillRegistry } from '@chatbot/core';
+import type { ChatPipeline, SkillRegistry, TokenCounter } from '@chatbot/core';
+import type { TokenizerRegistry } from '@chatbot/core';
 import type { HookDispatcher } from '@chatbot/plugins';
 import type { ConfigService } from './configService.js';
 import type { ChatMessage, PluginHookEvent } from '@chatbot/types';
@@ -53,7 +54,19 @@ export class ChatService {
     private regexRuleRepo?: RegexRuleRepo,
     private triggerRepo?: TriggerRepo,
     private hookDispatcher?: HookDispatcher,
+    // Phase 7: Model-aware tokenizer
+    private tokenizerRegistry?: TokenizerRegistry,
   ) { }
+
+  /**
+   * Phase 7: Get a model-aware token counter function.
+   * Falls back to the default heuristic estimateTokens if no registry.
+   */
+  private getTokenCounter(modelId?: string): TokenCounter | undefined {
+    if (!this.tokenizerRegistry || !modelId) return undefined;
+    const tokenizer = this.tokenizerRegistry.getTokenizer(modelId);
+    return (text: string) => tokenizer.count(text);
+  }
 
   private get contextWindow(): number {
     return this.config.get().memory?.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
@@ -442,7 +455,8 @@ export class ChatService {
       contextWindow: ctxWindow,
       maxResponseTokens: completionParams.maxTokens ?? 1024,
     });
-    const trimmedHistory = trimHistory(processedMessages, budget.history);
+    const tokenCounter = this.getTokenCounter(completionParams.modelId);
+    const trimmedHistory = trimHistory(processedMessages, budget.history, tokenCounter);
 
     // Build assembly order with memory/lorebook/skills slots
     let effectiveOrder = [...assemblyOrder];
@@ -647,7 +661,8 @@ export class ChatService {
       contextWindow: ctxWindow,
       maxResponseTokens: completionParams.maxTokens ?? 1024,
     });
-    const trimmedHistory = trimHistory(processedMessages, budget.history);
+    const tokenCounter = this.getTokenCounter(completionParams.modelId);
+    const trimmedHistory = trimHistory(processedMessages, budget.history, tokenCounter);
 
     // Build assembly order with memory/lorebook/skills slots
     let effectiveOrder = [...assemblyOrder];

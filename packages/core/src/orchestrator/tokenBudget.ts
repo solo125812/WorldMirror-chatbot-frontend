@@ -1,6 +1,7 @@
 /**
  * Token Budget Allocator
  * Approximate token counting and priority-based history trimming.
+ * Phase 7: Now supports pluggable token counter via TokenizerRegistry.
  */
 
 export interface TokenBudget {
@@ -21,8 +22,15 @@ export interface BudgetOptions {
 }
 
 /**
+ * Token counter function signature.
+ * Phase 7: Allows plugging in a model-aware tokenizer from TokenizerRegistry.
+ */
+export type TokenCounter = (text: string) => number;
+
+/**
  * Approximate token count using word-based heuristic.
  * ~1.3 tokens per word for English text (conservative estimate).
+ * For more accurate counting, use TokenizerRegistry.countTokens() instead.
  */
 export function estimateTokens(text: string): number {
     if (!text) return 0;
@@ -52,17 +60,25 @@ export function allocateBudget(opts: BudgetOptions): TokenBudget {
 /**
  * Trim messages to fit within a token budget.
  * Strategy: keep system messages, keep the most recent messages, drop oldest first.
+ *
+ * @param messages — The messages to trim
+ * @param maxTokens — Maximum token budget for kept messages
+ * @param counter — Optional custom token counter (default: estimateTokens heuristic).
+ *   Use `TokenizerRegistry.getTokenizer(modelId).count` for model-aware counting.
  */
 export function trimHistory<T extends { role: string; content: string }>(
     messages: T[],
     maxTokens: number,
+    counter?: TokenCounter,
 ): T[] {
     if (maxTokens <= 0) return [];
+
+    const countFn = counter ?? estimateTokens;
 
     // Calculate total tokens
     let totalTokens = 0;
     const tokenCounts = messages.map((m) => {
-        const count = estimateTokens(m.content);
+        const count = countFn(m.content);
         totalTokens += count;
         return count;
     });

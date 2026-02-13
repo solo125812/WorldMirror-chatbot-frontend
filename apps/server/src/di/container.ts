@@ -3,8 +3,8 @@
  * Centralizes service creation and wiring for the server
  */
 
-import { ProviderRegistry, MockProvider, AnthropicProvider, OllamaProvider, ChatPipeline, SkillRegistry } from '@chatbot/core';
-import { createDatabase, resetDatabase, runMigrations, ChatRepo, MessageRepo, CharacterRepo, SamplerPresetRepo, MemoryRepo, DocumentRepo, DocChunkRepo, LorebookRepo, LorebookEntryRepo, LorebookBindingRepo, GroupChatRepo, VariableRepo, RegexRuleRepo, TriggerRepo, PluginRepo, ExtensionRepo, CodeChunkRepo, IndexJobRepo } from '@chatbot/db';
+import { ProviderRegistry, MockProvider, AnthropicProvider, OllamaProvider, ChatPipeline, SkillRegistry, PromptFormatRegistry, TokenizerRegistry } from '@chatbot/core';
+import { createDatabase, resetDatabase, runMigrations, ChatRepo, MessageRepo, CharacterRepo, SamplerPresetRepo, MemoryRepo, DocumentRepo, DocChunkRepo, LorebookRepo, LorebookEntryRepo, LorebookBindingRepo, GroupChatRepo, VariableRepo, RegexRuleRepo, TriggerRepo, PluginRepo, ExtensionRepo, CodeChunkRepo, IndexJobRepo, CheckpointRepo, QuickReplySetRepo, QuickReplyItemRepo } from '@chatbot/db';
 import type { DatabaseClient } from '@chatbot/db';
 import {
   createEmbeddingProvider,
@@ -61,6 +61,12 @@ export interface Container {
   codeChunkRepo: CodeChunkRepo;
   indexJobRepo: IndexJobRepo;
   codeIndexer: CodeIndexer;
+  // Phase 7: Instruct, Tokenizer, Branching, Quick Replies
+  promptFormatRegistry: PromptFormatRegistry;
+  tokenizerRegistry: TokenizerRegistry;
+  checkpointRepo: CheckpointRepo;
+  quickReplySetRepo: QuickReplySetRepo;
+  quickReplyItemRepo: QuickReplyItemRepo;
   configService: ConfigService;
   chatService: ChatService;
 }
@@ -102,6 +108,11 @@ export function createContainer(): Container {
   const extensionRepo = new ExtensionRepo(dbClient.db);
   const codeChunkRepo = new CodeChunkRepo(dbClient.db);
   const indexJobRepo = new IndexJobRepo(dbClient.db);
+
+  // Phase 7: New repositories
+  const checkpointRepo = new CheckpointRepo(dbClient.db);
+  const quickReplySetRepo = new QuickReplySetRepo(dbClient.db);
+  const quickReplyItemRepo = new QuickReplyItemRepo(dbClient.db);
 
   // Create config service
   const configService = new ConfigService();
@@ -243,6 +254,14 @@ export function createContainer(): Container {
     vectorStore,
   );
 
+  // Phase 7: Instruct mode and tokenizer registries
+  const promptFormatRegistry = new PromptFormatRegistry();
+  const tokenizerRegistry = new TokenizerRegistry();
+  // Attempt to initialize tiktoken (optional dependency)
+  tokenizerRegistry.initTiktoken().catch(() => {
+    // js-tiktoken not installed — heuristic fallback will be used
+  });
+
   // Create services
   const chatService = new ChatService(
     chatRepo,
@@ -263,6 +282,8 @@ export function createContainer(): Container {
     regexRuleRepo,
     triggerRepo,
     hookDispatcher,
+    // Phase 7: Model-aware tokenizer
+    tokenizerRegistry,
   );
 
   container = {
@@ -301,6 +322,12 @@ export function createContainer(): Container {
     codeChunkRepo,
     indexJobRepo,
     codeIndexer,
+    // Phase 7
+    promptFormatRegistry,
+    tokenizerRegistry,
+    checkpointRepo,
+    quickReplySetRepo,
+    quickReplyItemRepo,
     configService,
     chatService,
   };

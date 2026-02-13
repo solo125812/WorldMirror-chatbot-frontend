@@ -3,6 +3,8 @@
  */
 
 import type { AutoCaptureConfig, CompactionConfig, EmbeddingConfig } from './memory.js';
+import type { InstructModelMapping } from './instruct.js';
+import type { ReasoningConfig } from './reasoning.js';
 
 export interface AppConfig {
   server: ServerConfig;
@@ -18,6 +20,16 @@ export interface FeatureFlags {
   groupChat?: boolean;
   skills?: boolean;
   triggers?: boolean;
+  /** Phase 7: Enable instruct mode UI */
+  instructMode?: boolean;
+  /** Phase 7: Enable slash commands */
+  slashCommands?: boolean;
+  /** Phase 7: Enable chat branching */
+  branching?: boolean;
+  /** Phase 7: Enable quick replies */
+  quickReplies?: boolean;
+  /** Phase 7: Reasoning display configuration */
+  reasoning?: ReasoningConfig;
 }
 
 export interface ServerConfig {
@@ -48,6 +60,10 @@ export interface PromptConfig {
   systemPrompt: string;
   assemblyOrder: string[];
   regexRules?: RegexRule[];
+  /** Phase 7: Active instruct preset ID (null = auto or none) */
+  instructPresetId?: string;
+  /** Phase 7: Model-to-instruct mappings for auto-detection */
+  instructMappings?: InstructModelMapping[];
 }
 
 export interface MemoryConfig {

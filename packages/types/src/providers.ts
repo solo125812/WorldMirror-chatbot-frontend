@@ -12,6 +12,14 @@ export interface ModelInfo {
   supportsTools: boolean;
   supportsVision: boolean;
   supportsStreaming: boolean;
+  /** Phase 7: ID of the tokenizer to use for this model */
+  tokenizerId?: string;
+  /** Phase 7: Whether this model supports logprobs */
+  supportsLogprobs?: boolean;
+  /** Phase 7: Whether this model supports reasoning/thinking display */
+  supportsReasoning?: boolean;
+  /** Phase 7: Default instruct preset ID for text-completion backends */
+  instructPresetId?: string;
 }
 
 export interface CompletionParams {

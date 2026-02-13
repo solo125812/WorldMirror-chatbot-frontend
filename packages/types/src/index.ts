@@ -19,3 +19,11 @@ export * from './triggers.js';
 export * from './plugins.js';
 export * from './extensions.js';
 export * from './indexer.js';
+
+// Phase 7
+export * from './instruct.js';
+export * from './tokenizer.js';
+export * from './commands.js';
+export * from './reasoning.js';
+export * from './branching.js';
+export * from './quickReplies.js';

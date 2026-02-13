@@ -21,6 +21,10 @@ import { pluginRoutes } from './api/routes/plugins.js';
 import { extensionRoutes } from './api/routes/extensions.js';
 import { indexerRoutes } from './api/routes/indexer.js';
 import { diagnosticsRoutes } from './api/routes/diagnostics.js';
+import { branchingRoutes } from './api/routes/branching.js';
+import { quickReplyRoutes } from './api/routes/quickReplies.js';
+import { commandRoutes } from './api/routes/commands.js';
+import { instructRoutes } from './api/routes/instruct.js';
 import { createContainer } from './di/container.js';
 import { logger, AppError } from '@chatbot/utils';
 
@@ -60,6 +64,11 @@ export async function buildApp() {
   await app.register(indexerRoutes);
   // Phase 6
   await app.register(diagnosticsRoutes);
+  // Phase 7
+  await app.register(branchingRoutes);
+  await app.register(quickReplyRoutes);
+  await app.register(commandRoutes);
+  await app.register(instructRoutes);
 
   // Global error handler with AppError support
   app.setErrorHandler((error, _request, reply) => {

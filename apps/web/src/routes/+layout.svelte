@@ -14,6 +14,8 @@
     <nav>
       <a href="/chat">Chat</a>
       <a href="/characters">Characters</a>
+      <a href="/instruct">Instruct</a>
+      <a href="/quick-replies">Quick Replies</a>
       <a href="/plugins">Plugins</a>
       <a href="/extensions">Extensions</a>
       <a href="/indexing">Indexing</a>

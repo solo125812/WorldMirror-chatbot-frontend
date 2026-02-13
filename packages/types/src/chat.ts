@@ -23,6 +23,14 @@ export interface Chat {
   updatedAt: string;
   messages: ChatMessage[];
   metadata?: Record<string, unknown>;
+  /** Phase 7: Parent chat ID if this is a branch */
+  parentChatId?: string;
+  /** Phase 7: Message ID at which this branch diverges */
+  branchPointMessageId?: string;
+  /** Phase 7: Root chat of the branch tree */
+  rootChatId?: string;
+  /** Phase 7: User-assigned branch label */
+  branchLabel?: string;
 }
 
 export interface ChatRequest {
@@ -32,7 +40,7 @@ export interface ChatRequest {
   systemPrompt?: string;
 }
 
-export type ChatStreamEventType = 'token' | 'done' | 'error';
+export type ChatStreamEventType = 'token' | 'done' | 'error' | 'reasoning' | 'logprobs' | 'command';
 
 export interface TokenEvent {
   type: 'token';
@@ -50,4 +58,26 @@ export interface ErrorEvent {
   code?: string;
 }
 
-export type ChatStreamEvent = TokenEvent | DoneEvent | ErrorEvent;
+/** Phase 7: Reasoning/thinking block streamed from model */
+export interface ReasoningEvent {
+  type: 'reasoning';
+  content: string;
+  durationMs?: number;
+}
+
+/** Phase 7: Token-level probability data */
+export interface LogprobsEvent {
+  type: 'logprobs';
+  tokens: Array<{ token: string; logprob: number }>;
+}
+
+/** Phase 7: Slash command execution result */
+export interface CommandEvent {
+  type: 'command';
+  name: string;
+  success: boolean;
+  output?: string;
+  error?: string;
+}
+
+export type ChatStreamEvent = TokenEvent | DoneEvent | ErrorEvent | ReasoningEvent | LogprobsEvent | CommandEvent;

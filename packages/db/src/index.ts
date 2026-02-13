@@ -29,3 +29,7 @@ export { PluginRepo } from './repositories/pluginRepo.js';
 export { ExtensionRepo } from './repositories/extensionRepo.js';
 export { CodeChunkRepo } from './repositories/codeChunkRepo.js';
 export { IndexJobRepo } from './repositories/indexJobRepo.js';
+
+// Phase 7: Branching, Checkpoints, Quick Replies repositories
+export { CheckpointRepo } from './repositories/checkpointRepo.js';
+export { QuickReplySetRepo, QuickReplyItemRepo } from './repositories/quickReplyRepo.js';
