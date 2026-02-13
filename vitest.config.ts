@@ -10,6 +10,9 @@ export default defineConfig({
       '@chatbot/db': resolve(__dirname, 'packages/db/src/index.ts'),
       '@chatbot/storage': resolve(__dirname, 'packages/storage/src/index.ts'),
       '@chatbot/memory': resolve(__dirname, 'packages/memory/src/index.ts'),
+      '@chatbot/plugins': resolve(__dirname, 'packages/plugins/src/index.ts'),
+      '@chatbot/extensions': resolve(__dirname, 'packages/extensions/src/index.ts'),
+      '@chatbot/indexer': resolve(__dirname, 'packages/indexer/src/index.ts'),
     },
   },
   test: {

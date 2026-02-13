@@ -4,7 +4,7 @@
  */
 
 import { ProviderRegistry, MockProvider, AnthropicProvider, OllamaProvider, ChatPipeline, SkillRegistry } from '@chatbot/core';
-import { createDatabase, resetDatabase, runMigrations, ChatRepo, MessageRepo, CharacterRepo, SamplerPresetRepo, MemoryRepo, DocumentRepo, DocChunkRepo, LorebookRepo, LorebookEntryRepo, LorebookBindingRepo, GroupChatRepo, VariableRepo, RegexRuleRepo, TriggerRepo } from '@chatbot/db';
+import { createDatabase, resetDatabase, runMigrations, ChatRepo, MessageRepo, CharacterRepo, SamplerPresetRepo, MemoryRepo, DocumentRepo, DocChunkRepo, LorebookRepo, LorebookEntryRepo, LorebookBindingRepo, GroupChatRepo, VariableRepo, RegexRuleRepo, TriggerRepo, PluginRepo, ExtensionRepo, CodeChunkRepo, IndexJobRepo } from '@chatbot/db';
 import type { DatabaseClient } from '@chatbot/db';
 import {
   createEmbeddingProvider,
@@ -16,6 +16,9 @@ import {
   ContextCompactor,
 } from '@chatbot/memory';
 import type { EmbeddingProvider, VectorStore } from '@chatbot/memory';
+import { PluginLoader, HookDispatcher } from '@chatbot/plugins';
+import { ExtensionManager } from '@chatbot/extensions';
+import { CodeIndexer } from '@chatbot/indexer';
 import { ConfigService } from '../services/configService.js';
 import { ChatService } from '../services/chatService.js';
 import { resolve, dirname } from 'node:path';
@@ -49,6 +52,15 @@ export interface Container {
   regexRuleRepo: RegexRuleRepo;
   triggerRepo: TriggerRepo;
   skillRegistry: SkillRegistry;
+  // Phase 5: Plugins, Extensions, Indexer
+  pluginRepo: PluginRepo;
+  pluginLoader: PluginLoader;
+  hookDispatcher: HookDispatcher;
+  extensionRepo: ExtensionRepo;
+  extensionManager: ExtensionManager;
+  codeChunkRepo: CodeChunkRepo;
+  indexJobRepo: IndexJobRepo;
+  codeIndexer: CodeIndexer;
   configService: ConfigService;
   chatService: ChatService;
 }
@@ -84,6 +96,12 @@ export function createContainer(): Container {
   const variableRepo = new VariableRepo(dbClient.db);
   const regexRuleRepo = new RegexRuleRepo(dbClient.db);
   const triggerRepo = new TriggerRepo(dbClient.db);
+
+  // Phase 5: Plugins, Extensions, Indexer repositories
+  const pluginRepo = new PluginRepo(dbClient.db);
+  const extensionRepo = new ExtensionRepo(dbClient.db);
+  const codeChunkRepo = new CodeChunkRepo(dbClient.db);
+  const indexJobRepo = new IndexJobRepo(dbClient.db);
 
   // Create config service
   const configService = new ConfigService();
@@ -208,6 +226,23 @@ export function createContainer(): Container {
   skillsDirs.push({ path: workspaceSkillsPath, source: 'workspace' });
   const skillRegistry = new SkillRegistry(skillsDirs);
 
+  // Phase 5: Plugin system
+  const hookDispatcher = new HookDispatcher();
+  const pluginDirs = [resolve(dataDir, 'plugins')];
+  const pluginLoader = new PluginLoader(pluginRepo, hookDispatcher, pluginDirs);
+
+  // Phase 5: Extension manager
+  const extensionsDir = resolve(dataDir, 'extensions');
+  const extensionManager = new ExtensionManager(extensionRepo, { extensionsDir });
+
+  // Phase 5: Code indexer
+  const codeIndexer = new CodeIndexer(
+    codeChunkRepo,
+    indexJobRepo,
+    embeddingProvider,
+    vectorStore,
+  );
+
   // Create services
   const chatService = new ChatService(
     chatRepo,
@@ -256,6 +291,15 @@ export function createContainer(): Container {
     regexRuleRepo,
     triggerRepo,
     skillRegistry,
+    // Phase 5
+    pluginRepo,
+    pluginLoader,
+    hookDispatcher,
+    extensionRepo,
+    extensionManager,
+    codeChunkRepo,
+    indexJobRepo,
+    codeIndexer,
     configService,
     chatService,
   };

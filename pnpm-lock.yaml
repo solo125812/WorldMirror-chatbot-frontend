@@ -32,9 +32,18 @@ importers:
       '@chatbot/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@chatbot/extensions':
+        specifier: workspace:*
+        version: link:../../packages/extensions
+      '@chatbot/indexer':
+        specifier: workspace:*
+        version: link:../../packages/indexer
       '@chatbot/memory':
         specifier: workspace:*
         version: link:../../packages/memory
+      '@chatbot/plugins':
+        specifier: workspace:*
+        version: link:../../packages/plugins
       '@chatbot/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -127,6 +136,44 @@ importers:
         specifier: ^5.7.3
         version: 5.9.3
 
+  packages/extensions:
+    dependencies:
+      '@chatbot/db':
+        specifier: workspace:*
+        version: link:../db
+      '@chatbot/types':
+        specifier: workspace:*
+        version: link:../types
+      '@chatbot/utils':
+        specifier: workspace:*
+        version: link:../utils
+      zod:
+        specifier: ^3.24.2
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  packages/indexer:
+    dependencies:
+      '@chatbot/db':
+        specifier: workspace:*
+        version: link:../db
+      '@chatbot/memory':
+        specifier: workspace:*
+        version: link:../memory
+      '@chatbot/types':
+        specifier: workspace:*
+        version: link:../types
+      '@chatbot/utils':
+        specifier: workspace:*
+        version: link:../utils
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
   packages/memory:
     dependencies:
       '@chatbot/db':
@@ -138,6 +185,25 @@ importers:
       '@chatbot/utils':
         specifier: workspace:*
         version: link:../utils
+    devDependencies:
+      typescript:
+        specifier: ^5.7.3
+        version: 5.9.3
+
+  packages/plugins:
+    dependencies:
+      '@chatbot/db':
+        specifier: workspace:*
+        version: link:../db
+      '@chatbot/types':
+        specifier: workspace:*
+        version: link:../types
+      '@chatbot/utils':
+        specifier: workspace:*
+        version: link:../utils
+      zod:
+        specifier: ^3.24.2
+        version: 3.25.76
     devDependencies:
       typescript:
         specifier: ^5.7.3

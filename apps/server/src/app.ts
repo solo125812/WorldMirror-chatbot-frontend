@@ -17,6 +17,9 @@ import { lorebookRoutes } from './api/routes/lorebooks.js';
 import { groupRoutes } from './api/routes/groups.js';
 import { skillRoutes } from './api/routes/skills.js';
 import { triggerRoutes } from './api/routes/triggers.js';
+import { pluginRoutes } from './api/routes/plugins.js';
+import { extensionRoutes } from './api/routes/extensions.js';
+import { indexerRoutes } from './api/routes/indexer.js';
 import { createContainer } from './di/container.js';
 import { logger } from '@chatbot/utils';
 
@@ -50,6 +53,10 @@ export async function buildApp() {
   await app.register(groupRoutes);
   await app.register(skillRoutes);
   await app.register(triggerRoutes);
+  // Phase 5
+  await app.register(pluginRoutes);
+  await app.register(extensionRoutes);
+  await app.register(indexerRoutes);
 
   // Global error handler
   app.setErrorHandler((error, _request, reply) => {
