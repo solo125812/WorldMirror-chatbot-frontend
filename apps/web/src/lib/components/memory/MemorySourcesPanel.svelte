@@ -114,7 +114,7 @@
 
   async function deleteDocument(id: string) {
     try {
-      const res = await fetch(`${apiBase}/memory/${id}`, { method: 'DELETE' });
+      const res = await fetch(`${apiBase}/memory/documents/${id}`, { method: 'DELETE' });
       if (res.ok) {
         await loadDocuments();
       }

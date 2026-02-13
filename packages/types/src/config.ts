@@ -2,11 +2,14 @@
  * Configuration type definitions
  */
 
+import type { AutoCaptureConfig, CompactionConfig, EmbeddingConfig } from './memory.js';
+
 export interface AppConfig {
   server: ServerConfig;
   providers: ProviderConfigEntry[];
   prompt: PromptConfig;
   activeModelId?: string;
+  memory?: MemoryConfig;
 }
 
 export interface ServerConfig {
@@ -39,6 +42,28 @@ export interface PromptConfig {
   regexRules?: RegexRule[];
 }
 
+export interface MemoryConfig {
+  embedding?: EmbeddingConfig;
+  autoCapture?: Partial<AutoCaptureConfig>;
+  compaction?: Partial<CompactionConfig>;
+  /** Default context window size for compaction and budgeting */
+  contextWindow?: number;
+  /** Max combined results from scoped + global memory search */
+  memorySearchLimit?: number;
+  fileMemory?: {
+    enabled?: boolean;
+    baseDir?: string;
+  };
+  search?: {
+    defaultLimit?: number;
+    minScore?: number;
+    recencyWindowDays?: number;
+  };
+  vectorStore?: {
+    persistPath?: string;
+  };
+}
+
 export interface RegexRule {
   id: string;
   name: string;
@@ -68,4 +93,5 @@ export const DEFAULT_CONFIG: AppConfig = {
     assemblyOrder: ['system', 'history', 'user'],
     regexRules: [],
   },
+  memory: {},
 };

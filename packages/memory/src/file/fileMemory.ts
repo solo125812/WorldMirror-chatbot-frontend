@@ -137,7 +137,9 @@ export class FileMemory {
     let results = this.index.entries.filter((e) => {
       if (opts.scope && e.scope !== opts.scope) return false;
       if (opts.sourceId && e.sourceId !== opts.sourceId) return false;
-      return e.preview.toLowerCase().includes(queryLower);
+      if (e.preview.toLowerCase().includes(queryLower)) return true;
+      const full = this.getEntryContent(e.id);
+      return full ? full.toLowerCase().includes(queryLower) : false;
     });
 
     // Sort by recency
@@ -165,6 +167,19 @@ export class FileMemory {
     );
     const match = fileContent.match(pattern);
     return match ? match[1].trim() : null;
+  }
+
+  /**
+   * Delete an entry from the index. Note: does not rewrite the markdown log.
+   */
+  deleteEntry(id: string): boolean {
+    const idx = this.index.entries.findIndex((e) => e.id === id);
+    if (idx === -1) return false;
+
+    this.index.entries.splice(idx, 1);
+    this.index.lastUpdated = nowIso();
+    this.saveIndex();
+    return true;
   }
 
   /**

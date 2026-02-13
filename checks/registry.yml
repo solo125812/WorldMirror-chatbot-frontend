@@ -103,7 +103,7 @@ memory:
     - tests/unit/summarizer.spec.ts
     - tests/integration/memory.spec.ts
   runtime_checks:
-    - endpoint: GET /memory/search
+    - endpoint: GET /memory/search?q=ping
     - endpoint: GET /memory/entries
 
 documents:
@@ -126,4 +126,5 @@ vector:
     - packages/memory/src/embeddings/embeddingClient.ts
   tests:
     - tests/unit/chunkers.spec.ts
+    - tests/unit/vectorStore.spec.ts
   runtime_checks: []

@@ -42,12 +42,26 @@ describe('Config API', () => {
         prompt: {
           systemPrompt: 'You are a pirate AI.',
         },
+        memory: {
+          embedding: {
+            provider: 'local',
+            model: 'local-fallback',
+            dimensions: 256,
+          },
+          fileMemory: {
+            enabled: false,
+          },
+        },
       },
     });
 
     expect(response.statusCode).toBe(200);
     const body = JSON.parse(response.body);
     expect(body.prompt.systemPrompt).toBe('You are a pirate AI.');
+    expect(body.memory).toBeDefined();
+    expect(body.memory.embedding.provider).toBe('local');
+    expect(body.memory.embedding.dimensions).toBe(256);
+    expect(body.memory.fileMemory.enabled).toBe(false);
   });
 
   it('PATCH /config should persist changes', async () => {
@@ -58,6 +72,12 @@ describe('Config API', () => {
       payload: {
         prompt: {
           systemPrompt: 'Updated prompt',
+        },
+        memory: {
+          search: {
+            defaultLimit: 7,
+            minScore: 0.2,
+          },
         },
       },
     });
@@ -70,5 +90,7 @@ describe('Config API', () => {
 
     const body = JSON.parse(response.body);
     expect(body.prompt.systemPrompt).toBe('Updated prompt');
+    expect(body.memory.search.defaultLimit).toBe(7);
+    expect(body.memory.search.minScore).toBe(0.2);
   });
 });

@@ -109,6 +109,8 @@ export class DocumentIngestor {
             documentId: doc.id,
             chunkIndex: batch[j].chunkIndex,
             entryId: chunkId,
+            scope: 'global',
+            category: 'document',
           });
 
           // Update embedding ref in SQLite

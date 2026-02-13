@@ -42,11 +42,67 @@ const PromptConfigSchema = z.object({
   regexRules: z.array(RegexRuleSchema).default([]),
 });
 
+const EmbeddingConfigSchema = z.object({
+  provider: z.enum(['openai', 'ollama', 'local']).optional(),
+  model: z.string().optional(),
+  baseUrl: z.string().optional(),
+  apiKey: z.string().optional(),
+  dimensions: z.number().int().positive().optional(),
+});
+
+const AutoCaptureTriggerSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  pattern: z.string(),
+  category: z.string(),
+  enabled: z.boolean(),
+});
+
+const AutoCaptureConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  maxPerTurn: z.number().int().min(1).max(20).optional(),
+  deduplicationThreshold: z.number().min(0).max(1).optional(),
+  triggers: z.array(AutoCaptureTriggerSchema).optional(),
+});
+
+const CompactionConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  threshold: z.number().min(0).max(1).optional(),
+  preserveRecentMessages: z.number().int().min(0).optional(),
+});
+
+const MemoryConfigSchema = z.object({
+  embedding: EmbeddingConfigSchema.optional(),
+  autoCapture: AutoCaptureConfigSchema.optional(),
+  compaction: CompactionConfigSchema.optional(),
+  contextWindow: z.number().int().min(1024).max(1_000_000).optional(),
+  memorySearchLimit: z.number().int().min(1).max(100).optional(),
+  fileMemory: z
+    .object({
+      enabled: z.boolean().optional(),
+      baseDir: z.string().optional(),
+    })
+    .optional(),
+  search: z
+    .object({
+      defaultLimit: z.number().int().min(1).max(100).optional(),
+      minScore: z.number().min(0).max(1).optional(),
+      recencyWindowDays: z.number().int().min(1).max(3650).optional(),
+    })
+    .optional(),
+  vectorStore: z
+    .object({
+      persistPath: z.string().optional(),
+    })
+    .optional(),
+});
+
 const AppConfigSchema = z.object({
   server: ServerConfigSchema,
   providers: z.array(ProviderConfigSchema),
   prompt: PromptConfigSchema,
   activeModelId: z.string().optional(),
+  memory: MemoryConfigSchema.optional(),
 });
 
 export class ConfigService {
@@ -71,6 +127,7 @@ export class ConfigService {
       server: { ...this.config.server, ...(patch.server ?? {}) },
       prompt: { ...this.config.prompt, ...(patch.prompt ?? {}) },
       providers: patch.providers ?? this.config.providers,
+      memory: { ...(this.config.memory ?? {}), ...(patch.memory ?? {}) },
     };
 
     this.config = this.validate(merged);

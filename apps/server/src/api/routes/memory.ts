@@ -19,7 +19,8 @@ export async function memoryRoutes(app: FastifyInstance) {
    */
   app.post('/memory/ingest', async (request: FastifyRequest, reply: FastifyReply) => {
     const container = getContainer();
-    const body = request.body as {
+    const contentType = request.headers['content-type'] ?? '';
+    let payload: {
       type: 'file' | 'url' | 'text';
       content?: string;
       url?: string;
@@ -27,25 +28,82 @@ export async function memoryRoutes(app: FastifyInstance) {
       mimeType?: string;
     };
 
-    if (!body.type) {
-      return reply.status(400).send({ error: 'type is required (file, url, or text)' });
-    }
+    if (contentType.includes('multipart/form-data')) {
+      const data = await request.file();
+      if (!data) {
+        return reply.status(400).send({ error: 'No file uploaded' });
+      }
 
-    if (body.type === 'text' && !body.content) {
-      return reply.status(400).send({ error: 'content is required for text type' });
-    }
+      const buffer = await data.toBuffer();
+      const filename = (data.filename ?? 'upload').toLowerCase();
+      const mimeType = data.mimetype ?? 'text/plain';
+      const fields = data.fields as Record<string, { value?: unknown }> | undefined;
+      const titleField =
+        typeof fields?.title?.value === 'string' ? fields?.title?.value : undefined;
 
-    if (body.type === 'url' && !body.url) {
-      return reply.status(400).send({ error: 'url is required for url type' });
-    }
+      const isText =
+        mimeType.startsWith('text/') ||
+        filename.endsWith('.txt') ||
+        filename.endsWith('.md') ||
+        filename.endsWith('.markdown');
 
-    try {
-      const result = await container.documentIngestor.ingest({
+      if (!isText) {
+        return reply
+          .status(415)
+          .send({ error: 'Unsupported file type. Use .txt or .md' });
+      }
+
+      payload = {
+        type: 'file',
+        content: buffer.toString('utf-8'),
+        title: titleField ?? data.filename ?? 'Uploaded file',
+        mimeType,
+      };
+    } else {
+      const body = request.body as {
+        type?: 'file' | 'url' | 'text';
+        content?: string;
+        url?: string;
+        title?: string;
+        mimeType?: string;
+      };
+
+      if (!body.type) {
+        return reply
+          .status(400)
+          .send({ error: 'type is required (file, url, or text)' });
+      }
+
+      if (body.type === 'text' && !body.content) {
+        return reply.status(400).send({ error: 'content is required for text type' });
+      }
+
+      if (body.type === 'url' && !body.url) {
+        return reply.status(400).send({ error: 'url is required for url type' });
+      }
+
+      if (body.type === 'file' && !body.content) {
+        return reply
+          .status(400)
+          .send({ error: 'content is required for file type (or use multipart)' });
+      }
+
+      payload = {
         type: body.type,
         content: body.content,
         url: body.url,
         title: body.title,
         mimeType: body.mimeType,
+      };
+    }
+
+    try {
+      const result = await container.documentIngestor.ingest({
+        type: payload.type,
+        content: payload.content,
+        url: payload.url,
+        title: payload.title,
+        mimeType: payload.mimeType,
       });
 
       return reply.status(201).send(result);
@@ -210,6 +268,35 @@ export async function memoryRoutes(app: FastifyInstance) {
   });
 
   /**
+   * DELETE /memory/documents/:id — Delete an ingested document
+   */
+  app.delete('/memory/documents/:id', async (request: FastifyRequest, reply: FastifyReply) => {
+    const container = getContainer();
+    const { id } = request.params as { id: string };
+
+    try {
+      const doc = container.documentRepo.get(id);
+      if (!doc) {
+        return reply.status(404).send({ error: 'Document not found' });
+      }
+
+      // Remove vectors for doc chunks
+      container.vectorStore.deleteByMetadata('documentId', id);
+
+      // Remove chunks + document rows
+      container.docChunkRepo.deleteByDocument(id);
+      container.documentRepo.delete(id);
+
+      return reply.send({ success: true });
+    } catch (error) {
+      logger.error('Document delete failed', error);
+      return reply.status(500).send({
+        error: error instanceof Error ? error.message : 'Delete failed',
+      });
+    }
+  });
+
+  /**
    * DELETE /memory/:id — Delete a memory entry
    */
   app.delete('/memory/:id', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -224,6 +311,11 @@ export async function memoryRoutes(app: FastifyInstance) {
       const deleted = container.memoryRepo.delete(id);
       if (!deleted) {
         return reply.status(404).send({ error: 'Memory entry not found' });
+      }
+
+      // Delete from file-backed memory index
+      if (container.fileMemory) {
+        container.fileMemory.deleteEntry(id);
       }
 
       return reply.status(204).send();

@@ -4,13 +4,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "turbo run dev --parallel",
-    "build": "turbo run build",
-    "lint": "turbo run lint",
-    "typecheck": "turbo run typecheck",
-    "test": "TMPDIR=/tmp/vitest-chatbot vitest run",
-    "test:watch": "vitest",
-    "check": "tsx checks/runner.ts"
+    "dev": "scripts/with-node-22.sh turbo run dev --parallel",
+    "build": "scripts/with-node-22.sh turbo run build",
+    "lint": "scripts/with-node-22.sh turbo run lint",
+    "typecheck": "scripts/with-node-22.sh turbo run typecheck",
+    "test": "TMPDIR=/tmp/vitest-chatbot scripts/with-node-22.sh vitest run",
+    "test:watch": "scripts/with-node-22.sh vitest",
+    "check": "scripts/with-node-22.sh tsx checks/runner.ts"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",

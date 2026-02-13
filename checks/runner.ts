@@ -11,10 +11,11 @@
  *   CHECK_BASE_URL=http://localhost:3001  — Base URL for runtime checks
  */
 
-import { readFileSync, existsSync, writeFileSync } from 'node:fs';
+import { readFileSync, existsSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { tmpdir } from 'node:os';
 
 // Simple YAML parser (minimal, no dependency needed)
 function parseYaml(content: string): Record<string, any> {
@@ -169,6 +170,9 @@ function buildUrl(baseUrl: string, path: string): string {
 function defaultPayloadFor(path: string): Record<string, unknown> | null {
   if (path.includes('/chat/stream') || path.endsWith('/chat')) {
     return { message: 'Ping' };
+  }
+  if (path.includes('/memory/ingest')) {
+    return { type: 'text', title: 'Check runner ping', content: 'Ping memory ingest.' };
   }
   return null;
 }
@@ -393,7 +397,32 @@ async function main() {
 
   // Run runtime checks
   const rawBaseUrl = process.env.CHECK_BASE_URL ?? 'http://localhost:3001';
-  const baseUrl = rawBaseUrl.startsWith('http') ? rawBaseUrl : `http://${rawBaseUrl}`;
+  let baseUrl = rawBaseUrl.startsWith('http') ? rawBaseUrl : `http://${rawBaseUrl}`;
+
+  const hasRuntimeChecks = featuresToCheck.some(
+    (feature) => (registry[feature] as any)?.runtime_checks?.length > 0
+  );
+
+  let runtimeApp: any = null;
+  let runtimeTempDir: string | null = null;
+  let originalAppDataDir: string | undefined;
+
+  if (!process.env.CHECK_BASE_URL && hasRuntimeChecks) {
+    try {
+      originalAppDataDir = process.env.APP_DATA_DIR;
+      runtimeTempDir = mkdtempSync(resolve(tmpdir(), 'worldmirror-runtime-'));
+      process.env.APP_DATA_DIR = runtimeTempDir;
+
+      const appModule = await import(
+        pathToFileURL(resolve(projectRoot, 'apps/server/src/app.ts')).href
+      );
+      runtimeApp = await appModule.buildApp();
+      const address = await runtimeApp.listen({ port: 0, host: '127.0.0.1' });
+      baseUrl = typeof address === 'string' ? address : `http://127.0.0.1:${address.port}`;
+    } catch (err) {
+      console.error('❌ Failed to start runtime server for checks', err);
+    }
+  }
   for (const feature of featuresToCheck) {
     const config = registry[feature] as any;
     const runtimeChecks = config.runtime_checks ?? [];
@@ -408,6 +437,30 @@ async function main() {
 
       const result = await runRuntimeCheck(feature, entryString, baseUrl);
       results.push(result);
+    }
+  }
+
+  if (runtimeApp) {
+    try {
+      await runtimeApp.close();
+    } catch {
+      // Ignore shutdown errors
+    }
+  }
+
+  if (runtimeTempDir) {
+    try {
+      rmSync(runtimeTempDir, { recursive: true, force: true });
+    } catch {
+      // Ignore cleanup failures
+    }
+  }
+
+  if (!process.env.CHECK_BASE_URL) {
+    if (originalAppDataDir === undefined) {
+      delete process.env.APP_DATA_DIR;
+    } else {
+      process.env.APP_DATA_DIR = originalAppDataDir;
     }
   }
 

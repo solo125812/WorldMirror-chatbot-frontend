@@ -53,10 +53,10 @@ export function allocateBudget(opts: BudgetOptions): TokenBudget {
  * Trim messages to fit within a token budget.
  * Strategy: keep system messages, keep the most recent messages, drop oldest first.
  */
-export function trimHistory(
-    messages: Array<{ role: string; content: string }>,
+export function trimHistory<T extends { role: string; content: string }>(
+    messages: T[],
     maxTokens: number,
-): Array<{ role: string; content: string }> {
+): T[] {
     if (maxTokens <= 0) return [];
 
     // Calculate total tokens
@@ -71,8 +71,8 @@ export function trimHistory(
     if (totalTokens <= maxTokens) return messages;
 
     // Separate system messages (always keep) from conversation messages
-    const result: Array<{ role: string; content: string }> = [];
-    const conversationMessages: Array<{ msg: { role: string; content: string }; tokens: number; index: number }> = [];
+    const result: T[] = [];
+    const conversationMessages: Array<{ msg: T; tokens: number; index: number }> = [];
     let systemTokensUsed = 0;
 
     for (let i = 0; i < messages.length; i++) {

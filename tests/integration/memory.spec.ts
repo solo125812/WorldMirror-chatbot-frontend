@@ -7,6 +7,34 @@ import { buildApp } from '../../apps/server/src/app.js';
 import { resetContainer } from '../../apps/server/src/di/container.js';
 import type { FastifyInstance } from 'fastify';
 
+function buildMultipartTextUpload(opts: { filename: string; content: string; title?: string }) {
+  const boundary = `----wm-boundary-${Math.random().toString(16).slice(2)}`;
+  const lines: string[] = [];
+
+  if (opts.title) {
+    lines.push(`--${boundary}`);
+    lines.push(`Content-Disposition: form-data; name="title"`);
+    lines.push('');
+    lines.push(opts.title);
+  }
+
+  lines.push(`--${boundary}`);
+  lines.push(
+    `Content-Disposition: form-data; name="file"; filename="${opts.filename}"`
+  );
+  lines.push('Content-Type: text/plain');
+  lines.push('');
+  lines.push(opts.content);
+  lines.push(`--${boundary}--`);
+  lines.push('');
+
+  const body = lines.join('\r\n');
+  return {
+    body,
+    contentType: `multipart/form-data; boundary=${boundary}`,
+  };
+}
+
 describe('Memory API', () => {
   let app: FastifyInstance;
 
@@ -129,6 +157,31 @@ describe('Memory API', () => {
 
       expect(response.statusCode).toBe(400);
     });
+
+    it('should return document hits for ingested content', async () => {
+      const ingestRes = await app.inject({
+        method: 'POST',
+        url: '/memory/ingest',
+        payload: {
+          type: 'text',
+          content: 'WorldMirror memory search should find uniqueToken123 content.',
+          title: 'Searchable Doc',
+        },
+      });
+
+      expect(ingestRes.statusCode).toBe(201);
+
+      const response = await app.inject({
+        method: 'GET',
+        url: '/memory/search?q=uniqueToken123',
+      });
+
+      expect(response.statusCode).toBe(200);
+      const body = JSON.parse(response.body);
+      const docs = (body.results ?? []).filter((r: any) => r.entry?.category === 'document');
+      expect(docs.length).toBeGreaterThan(0);
+      expect(docs[0].entry.content).toContain('uniqueToken123');
+    });
   });
 
   describe('POST /memory/ingest', () => {
@@ -173,6 +226,28 @@ describe('Memory API', () => {
 
       expect(response.statusCode).toBe(400);
     });
+
+    it('should ingest multipart text files', async () => {
+      const { body, contentType } = buildMultipartTextUpload({
+        filename: 'upload.txt',
+        content: 'Multipart ingestion content for WorldMirror.',
+        title: 'Multipart Doc',
+      });
+
+      const response = await app.inject({
+        method: 'POST',
+        url: '/memory/ingest',
+        payload: body,
+        headers: {
+          'content-type': contentType,
+        },
+      });
+
+      expect(response.statusCode).toBe(201);
+      const parsed = JSON.parse(response.body);
+      expect(parsed.document.title).toBe('Multipart Doc');
+      expect(parsed.chunks).toBeGreaterThan(0);
+    });
   });
 
   describe('GET /memory/documents', () => {
@@ -186,6 +261,39 @@ describe('Memory API', () => {
       const body = JSON.parse(response.body);
       expect(body.documents).toBeDefined();
       expect(Array.isArray(body.documents)).toBe(true);
+    });
+  });
+
+  describe('DELETE /memory/documents/:id', () => {
+    it('should delete an ingested document', async () => {
+      const ingestRes = await app.inject({
+        method: 'POST',
+        url: '/memory/ingest',
+        payload: {
+          type: 'text',
+          content: 'Document to delete with token deleteDocXYZ.',
+          title: 'Delete Doc',
+        },
+      });
+
+      expect(ingestRes.statusCode).toBe(201);
+      const ingestBody = JSON.parse(ingestRes.body);
+      const docId = ingestBody.document.id;
+
+      const deleteRes = await app.inject({
+        method: 'DELETE',
+        url: `/memory/documents/${docId}`,
+      });
+
+      expect(deleteRes.statusCode).toBe(200);
+
+      const listRes = await app.inject({
+        method: 'GET',
+        url: '/memory/documents',
+      });
+      const listBody = JSON.parse(listRes.body);
+      const exists = (listBody.documents ?? []).some((d: any) => d.id === docId);
+      expect(exists).toBe(false);
     });
   });
 
@@ -217,6 +325,39 @@ describe('Memory API', () => {
       });
 
       expect(response.statusCode).toBe(404);
+    });
+
+    it('should remove deleted entry from memory search results', async () => {
+      const createRes = await app.inject({
+        method: 'POST',
+        url: '/memory/capture',
+        payload: {
+          content: 'Searchable delete me token xyzDelete123.',
+        },
+      });
+      const entry = JSON.parse(createRes.body);
+
+      const searchBefore = await app.inject({
+        method: 'GET',
+        url: '/memory/search?q=xyzDelete123',
+      });
+      const beforeBody = JSON.parse(searchBefore.body);
+      expect((beforeBody.results ?? []).length).toBeGreaterThan(0);
+
+      await app.inject({
+        method: 'DELETE',
+        url: `/memory/${entry.id}`,
+      });
+
+      const searchAfter = await app.inject({
+        method: 'GET',
+        url: '/memory/search?q=xyzDelete123',
+      });
+      const afterBody = JSON.parse(searchAfter.body);
+      const stillPresent = (afterBody.results ?? []).some(
+        (r: any) => r.entry?.id === entry.id
+      );
+      expect(stillPresent).toBe(false);
     });
   });
 });

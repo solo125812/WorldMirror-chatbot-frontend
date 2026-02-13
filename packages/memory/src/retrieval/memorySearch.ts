@@ -15,7 +15,7 @@ import type {
   MemoryEntry,
   MemoryScope,
 } from '@chatbot/types';
-import type { MemoryRepo } from '@chatbot/db';
+import type { MemoryRepo, DocChunkRepo, DocumentRepo } from '@chatbot/db';
 import type { EmbeddingProvider } from '../embeddings/embeddingClient.js';
 import type { VectorStore } from '../vector/vectorStore.js';
 import type { FileMemory } from '../file/fileMemory.js';
@@ -44,6 +44,8 @@ export class MemorySearch {
     private embeddingProvider: EmbeddingProvider,
     private vectorStore: VectorStore,
     private fileMemory: FileMemory | null,
+    private docChunkRepo?: DocChunkRepo,
+    private documentRepo?: DocumentRepo,
     config?: Partial<MemorySearchConfig>
   ) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -71,8 +73,11 @@ export class MemorySearch {
       const keywordResults = this.keywordSearch(options, limit);
       // Merge without duplicates
       for (const kr of keywordResults) {
-        if (!results.find((r) => r.entry.id === kr.entry.id)) {
+        const existingIndex = results.findIndex((r) => r.entry.id === kr.entry.id);
+        if (existingIndex === -1) {
           results.push(kr);
+        } else if (results[existingIndex].score < kr.score) {
+          results[existingIndex] = kr;
         }
       }
     } catch (error) {
@@ -84,8 +89,11 @@ export class MemorySearch {
       try {
         const fileResults = this.fileSearch(options, limit);
         for (const fr of fileResults) {
-          if (!results.find((r) => r.entry.id === fr.entry.id)) {
+          const existingIndex = results.findIndex((r) => r.entry.id === fr.entry.id);
+          if (existingIndex === -1) {
             results.push(fr);
+          } else if (results[existingIndex].score < fr.score) {
+            results[existingIndex] = fr;
           }
         }
       } catch (error) {
@@ -134,8 +142,60 @@ export class MemorySearch {
       const entryId = vr.metadata.entryId as string;
       if (!entryId) continue;
 
+      const metaType = vr.metadata.type as string | undefined;
       const entry = this.memoryRepo.get(entryId);
+
+      if (!entry && this.docChunkRepo) {
+        const chunk = this.docChunkRepo.get(entryId);
+        if (!chunk) continue;
+
+        const doc = this.documentRepo?.get(chunk.documentId);
+        const docLabel = doc ? `Document: ${doc.title}\n` : '';
+
+        results.push({
+          entry: {
+            id: chunk.id,
+            type: 'document',
+            category: 'document',
+            scope: 'global',
+            sourceId: chunk.documentId,
+            content: `${docLabel}${chunk.content}`.trim(),
+            importance: 0.4,
+            autoCaptured: false,
+            createdAt: chunk.createdAt,
+          },
+          score: vr.score,
+          source: 'vector',
+        });
+        continue;
+      }
+
       if (!entry) continue;
+
+      // If vector metadata explicitly marks doc chunks, prefer doc lookup
+      if (metaType === 'doc_chunk' && this.docChunkRepo) {
+        const chunk = this.docChunkRepo.get(entryId);
+        if (chunk) {
+          const doc = this.documentRepo?.get(chunk.documentId);
+          const docLabel = doc ? `Document: ${doc.title}\n` : '';
+          results.push({
+            entry: {
+              id: chunk.id,
+              type: 'document',
+              category: 'document',
+              scope: 'global',
+              sourceId: chunk.documentId,
+              content: `${docLabel}${chunk.content}`.trim(),
+              importance: 0.4,
+              autoCaptured: false,
+              createdAt: chunk.createdAt,
+            },
+            score: vr.score,
+            source: 'vector',
+          });
+          continue;
+        }
+      }
 
       results.push({
         entry,
@@ -160,11 +220,40 @@ export class MemorySearch {
       limit,
     });
 
-    return entries.map((entry) => ({
+    const results: MemorySearchResult[] = entries.map((entry) => ({
       entry,
       score: 0.5, // Base score for keyword matches
       source: 'keyword' as const,
     }));
+
+    if (this.docChunkRepo && (!options.scope || options.scope === 'global')) {
+      const docChunks = this.docChunkRepo.searchByContent(options.query, {
+        documentId: options.sourceId,
+        limit,
+      });
+
+      for (const chunk of docChunks) {
+        const doc = this.documentRepo?.get(chunk.documentId);
+        const docLabel = doc ? `Document: ${doc.title}\n` : '';
+        results.push({
+          entry: {
+            id: chunk.id,
+            type: 'document',
+            category: 'document',
+            scope: 'global',
+            sourceId: chunk.documentId,
+            content: `${docLabel}${chunk.content}`.trim(),
+            importance: 0.4,
+            autoCaptured: false,
+            createdAt: chunk.createdAt,
+          },
+          score: 0.45,
+          source: 'keyword' as const,
+        });
+      }
+    }
+
+    return results;
   }
 
   /**
@@ -183,21 +272,24 @@ export class MemorySearch {
     });
 
     // Convert file results to MemorySearchResult
-    return fileResults.map((fr) => ({
-      entry: {
-        id: fr.id,
-        type: 'memory' as const,
-        category: fr.category,
-        scope: fr.scope,
-        sourceId: fr.sourceId,
-        content: fr.preview,
-        importance: 0.5,
-        autoCaptured: false,
-        createdAt: fr.createdAt,
-      },
-      score: 0.4, // Base score for file matches (lower than keyword)
-      source: 'file' as const,
-    }));
+    return fileResults.map((fr) => {
+      const fullContent = this.fileMemory?.getEntryContent(fr.id);
+      return {
+        entry: {
+          id: fr.id,
+          type: 'memory' as const,
+          category: fr.category,
+          scope: fr.scope,
+          sourceId: fr.sourceId,
+          content: fullContent ?? fr.preview,
+          importance: 0.5,
+          autoCaptured: false,
+          createdAt: fr.createdAt,
+        },
+        score: 0.4, // Base score for file matches (lower than keyword)
+        source: 'file' as const,
+      };
+    });
   }
 
   /**

@@ -12,6 +12,11 @@ import type { MemorySearch, AutoCaptureService, ContextCompactor } from '@chatbo
 import { formatMemoryContext } from '@chatbot/memory';
 import { logger } from '@chatbot/utils';
 
+/** Default context window when not configured */
+const DEFAULT_CONTEXT_WINDOW = 8192;
+/** Default combined memory search result limit */
+const DEFAULT_MEMORY_SEARCH_LIMIT = 10;
+
 export class ChatService {
   constructor(
     private chatRepo: ChatRepo,
@@ -24,6 +29,14 @@ export class ChatService {
     private autoCaptureService?: AutoCaptureService,
     private contextCompactor?: ContextCompactor,
   ) { }
+
+  private get contextWindow(): number {
+    return this.config.get().memory?.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
+  }
+
+  private get memorySearchLimit(): number {
+    return this.config.get().memory?.memorySearchLimit ?? DEFAULT_MEMORY_SEARCH_LIMIT;
+  }
 
   private buildPersona(character?: { name?: string; description?: string; personality?: string; scenario?: string; exampleMessages?: string; systemPrompt?: string; creatorNotes?: string; }): string {
     if (!character) return '';
@@ -52,11 +65,15 @@ export class ChatService {
       const scope = characterId ? 'character' : chatId ? 'chat' : 'global';
       const sourceId = characterId ?? chatId;
 
+      const limit = this.memorySearchLimit;
+      const scopedLimit = Math.ceil(limit * 0.8);
+      const globalLimit = Math.ceil(limit * 0.4);
+
       const results = await this.memorySearch.search({
         query: userMessage,
         scope,
         sourceId,
-        limit: 8,
+        limit: scopedLimit,
       });
 
       // Also search global scope if we searched a narrower scope
@@ -64,7 +81,7 @@ export class ChatService {
         const globalResults = await this.memorySearch.search({
           query: userMessage,
           scope: 'global',
-          limit: 4,
+          limit: globalLimit,
         });
         // Merge, deduplicating by id
         for (const gr of globalResults) {
@@ -74,7 +91,7 @@ export class ChatService {
         }
         // Re-sort by score and limit
         results.sort((a, b) => b.score - a.score);
-        results.splice(10);
+        results.splice(limit);
       }
 
       return formatMemoryContext(results);
@@ -180,10 +197,11 @@ export class ChatService {
 
     // Phase 3: Context compaction check
     let processedMessages = promptMessages;
+    const ctxWindow = this.contextWindow;
     if (this.contextCompactor) {
       const { messages: compactedMessages } = this.contextCompactor.compact(
         processedMessages,
-        8192,
+        ctxWindow,
         chatId,
         characterId ?? undefined
       );
@@ -191,7 +209,7 @@ export class ChatService {
     }
 
     const budget = allocateBudget({
-      contextWindow: 8192,
+      contextWindow: ctxWindow,
       maxResponseTokens: completionParams.maxTokens ?? 1024,
     });
     const trimmedHistory = trimHistory(processedMessages, budget.history);
@@ -305,10 +323,11 @@ export class ChatService {
 
     // Phase 3: Context compaction check
     let processedMessages = promptMessages;
+    const ctxWindow = this.contextWindow;
     if (this.contextCompactor) {
       const { messages: compactedMessages } = this.contextCompactor.compact(
         processedMessages,
-        8192,
+        ctxWindow,
         chatId,
         characterId ?? undefined
       );
@@ -316,7 +335,7 @@ export class ChatService {
     }
 
     const budget = allocateBudget({
-      contextWindow: 8192,
+      contextWindow: ctxWindow,
       maxResponseTokens: completionParams.maxTokens ?? 1024,
     });
     const trimmedHistory = trimHistory(processedMessages, budget.history);

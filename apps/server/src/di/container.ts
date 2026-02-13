@@ -106,13 +106,14 @@ export function createContainer(): Container {
 
   // Phase 3: Memory system setup
   const appConfig = configService.get();
-  const memoryConfig = (appConfig as any).memory ?? {};
+  const memoryConfig = appConfig.memory ?? {};
 
   // Embedding provider — defaults to local fallback
-  const embeddingConfig = memoryConfig.embedding ?? {
+  const embeddingConfig = {
     provider: 'local',
     model: 'local-fallback',
     dimensions: 384,
+    ...(memoryConfig.embedding ?? {}),
   };
   const embeddingProvider = createEmbeddingProvider(embeddingConfig);
 
@@ -122,18 +123,25 @@ export function createContainer(): Container {
     : resolve(process.cwd(), 'data');
   const vectorStore = createVectorStore({
     dimensions: embeddingProvider.dimensions(),
-    persistPath: resolve(dataDir, 'vectors.json'),
+    persistPath: memoryConfig.vectorStore?.persistPath
+      ? resolve(memoryConfig.vectorStore.persistPath)
+      : resolve(dataDir, 'vectors.json'),
   });
 
   // File-backed memory
   let fileMemory: FileMemory | null = null;
-  try {
-    fileMemory = new FileMemory({
-      baseDir: resolve(dataDir, 'memory'),
-    });
-  } catch (error) {
-    // File memory is optional — may fail in restricted environments
-    fileMemory = null;
+  const fileMemoryEnabled = memoryConfig.fileMemory?.enabled !== false;
+  if (fileMemoryEnabled) {
+    try {
+      fileMemory = new FileMemory({
+        baseDir: memoryConfig.fileMemory?.baseDir
+          ? resolve(memoryConfig.fileMemory.baseDir)
+          : resolve(dataDir, 'memory'),
+      });
+    } catch (error) {
+      // File memory is optional — may fail in restricted environments
+      fileMemory = null;
+    }
   }
 
   // Memory search
@@ -141,7 +149,10 @@ export function createContainer(): Container {
     memoryRepo,
     embeddingProvider,
     vectorStore,
-    fileMemory
+    fileMemory,
+    docChunkRepo,
+    documentRepo,
+    memoryConfig.search
   );
 
   // Document ingestor
@@ -157,13 +168,17 @@ export function createContainer(): Container {
     memoryRepo,
     embeddingProvider,
     vectorStore,
-    fileMemory
+    fileMemory,
+    memoryConfig.autoCapture
   );
 
   // Context compactor
   const contextCompactor = new ContextCompactor(
     memoryRepo,
-    fileMemory
+    fileMemory,
+    embeddingProvider,
+    vectorStore,
+    memoryConfig.compaction
   );
 
   // Create services

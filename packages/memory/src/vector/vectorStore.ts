@@ -174,8 +174,7 @@ export class InMemoryVectorStore implements VectorStore {
   }
 
   private maybePersist(): void {
-    // Persist every 100 operations or when batch completes
-    if (this.persistPath && this.entries.size % 100 === 0) {
+    if (this.persistPath && this.dirty) {
       this.saveToDisk();
       this.dirty = false;
     }

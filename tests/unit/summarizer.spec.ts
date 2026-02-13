@@ -8,6 +8,7 @@ import {
   heuristicSummarize,
   estimateMessagesTokens,
   DEFAULT_COMPACTION_CONFIG,
+  ContextCompactor,
 } from '@chatbot/memory';
 import type { ChatMessage } from '@chatbot/types';
 
@@ -151,5 +152,51 @@ describe('heuristicSummarize', () => {
     expect(result.summary).toContain('Conversation summary');
     expect(result.summary).toContain('User:');
     expect(result.summary).toContain('Assistant:');
+  });
+});
+
+describe('ContextCompactor embedding', () => {
+  it('should embed summaries when embedding provider is available', async () => {
+    const messages: ChatMessage[] = [];
+    for (let i = 0; i < 12; i++) {
+      messages.push(
+        makeMsg(i % 2 === 0 ? 'user' : 'assistant', `Message ${i} with details.`, i)
+      );
+    }
+
+    const created: any[] = [];
+    const inserted: any[] = [];
+    const memoryRepo = {
+      create: (data: any) => {
+        const entry = { id: 'summary-id', createdAt: new Date().toISOString(), ...data };
+        created.push(entry);
+        return entry;
+      },
+      updateEmbeddingRef: () => true,
+    } as any;
+
+    const embeddingProvider = {
+      embed: async () => ({ embeddings: [[0.1, 0.2, 0.3]], model: 'test', tokenCount: 0 }),
+    } as any;
+
+    const vectorStore = {
+      insert: (...args: any[]) => {
+        inserted.push(args);
+      },
+    } as any;
+
+    const compactor = new ContextCompactor(
+      memoryRepo,
+      null,
+      embeddingProvider,
+      vectorStore,
+      { threshold: 0.1, preserveRecentMessages: 2 }
+    );
+
+    compactor.compact(messages, 50, 'chat-1');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(created.length).toBeGreaterThan(0);
+    expect(inserted.length).toBe(1);
   });
 });

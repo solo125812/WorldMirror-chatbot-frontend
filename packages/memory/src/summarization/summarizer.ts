@@ -13,6 +13,8 @@ import type {
 } from '@chatbot/types';
 import type { MemoryRepo } from '@chatbot/db';
 import type { FileMemory } from '../file/fileMemory.js';
+import type { EmbeddingProvider } from '../embeddings/embeddingClient.js';
+import type { VectorStore } from '../vector/vectorStore.js';
 import { estimateTokenCount } from '../ingest/chunkers.js';
 import { logger, nowIso } from '@chatbot/utils';
 
@@ -133,6 +135,8 @@ export class ContextCompactor {
   constructor(
     private memoryRepo: MemoryRepo,
     private fileMemory: FileMemory | null,
+    private embeddingProvider?: EmbeddingProvider,
+    private vectorStore?: VectorStore,
     config?: Partial<CompactionConfig>
   ) {
     this.config = { ...DEFAULT_COMPACTION_CONFIG, ...config };
@@ -189,6 +193,11 @@ export class ContextCompactor {
       if (this.fileMemory) {
         this.fileMemory.write(entry);
       }
+
+      // Embed and index summary for semantic search
+      if (this.embeddingProvider && this.vectorStore) {
+        void this.embedSummary(entry);
+      }
     }
 
     const event: CompactionEvent = {
@@ -210,6 +219,24 @@ export class ContextCompactor {
     });
 
     return { messages: preserved, event };
+  }
+
+  private async embedSummary(entry: { id: string; content: string; scope: string; sourceId?: string }) {
+    try {
+      const { embeddings } = await this.embeddingProvider!.embed([entry.content]);
+      if (embeddings.length === 0) return;
+
+      this.vectorStore!.insert(entry.id, embeddings[0], {
+        type: 'summary',
+        entryId: entry.id,
+        category: 'summary',
+        scope: entry.scope,
+        sourceId: entry.sourceId,
+      });
+      this.memoryRepo.updateEmbeddingRef(entry.id, entry.id);
+    } catch (error) {
+      logger.warn('Failed to embed summary', error);
+    }
   }
 
   /**
