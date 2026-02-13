@@ -7,3 +7,4 @@ export * from './config.js';
 export * from './providers.js';
 export * from './characters.js';
 export * from './sampler.js';
+export * from './memory.js';

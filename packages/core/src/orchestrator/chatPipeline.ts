@@ -11,6 +11,7 @@ export interface PipelineOptions {
   systemPrompt?: string;
   persona?: string;
   authorNote?: string;
+  memoryContext?: string;
   assemblyOrder?: string[];
   modelId?: string;
   providerId?: string;
@@ -28,7 +29,7 @@ export class ChatPipeline {
    */
   assemblePrompt(
     messages: ChatMessage[],
-    options?: string | { systemPrompt?: string; persona?: string; authorNote?: string; assemblyOrder?: string[] }
+    options?: string | { systemPrompt?: string; persona?: string; authorNote?: string; memoryContext?: string; assemblyOrder?: string[] }
   ): ChatMessage[] {
     const opts = typeof options === 'string' || options === undefined
       ? { systemPrompt: options }
@@ -37,6 +38,7 @@ export class ChatPipeline {
     const systemPrompt = opts.systemPrompt;
     const persona = opts.persona;
     const authorNote = opts.authorNote;
+    const memoryContext = opts.memoryContext;
     const order = opts.assemblyOrder ?? ['system', 'history', 'user'];
 
     const assembled: ChatMessage[] = [];
@@ -71,6 +73,9 @@ export class ChatPipeline {
         case 'author_note':
           if (authorNote) assembled.push(makeSystem('author', authorNote));
           break;
+        case 'memory':
+          if (memoryContext) assembled.push(makeSystem('memory', memoryContext));
+          break;
         case 'history':
         case 'recent':
           assembled.push(...historyMessages);
@@ -96,7 +101,7 @@ export class ChatPipeline {
     messages: ChatMessage[],
     options: PipelineOptions = {}
   ): AsyncIterable<StreamChunk> {
-    const { systemPrompt, persona, authorNote, assemblyOrder, providerId, modelId, completionParams = {} } = options;
+    const { systemPrompt, persona, authorNote, memoryContext, assemblyOrder, providerId, modelId, completionParams = {} } = options;
 
     logger.info('Chat pipeline executing', {
       messageCount: messages.length,
@@ -105,7 +110,7 @@ export class ChatPipeline {
 
     try {
       // Step 1: Assemble prompt
-      const assembled = this.assemblePrompt(messages, { systemPrompt, persona, authorNote, assemblyOrder });
+      const assembled = this.assemblePrompt(messages, { systemPrompt, persona, authorNote, memoryContext, assemblyOrder });
 
       // Step 2: Resolve provider
       const provider = this.registry.resolve(providerId);

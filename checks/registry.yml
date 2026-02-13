@@ -1,4 +1,4 @@
-# Checks Registry — Phase 1 + Phase 2
+# Checks Registry — Phase 1 + Phase 2 + Phase 3
 # Maps features to their source files and test files
 
 chat:
@@ -86,4 +86,44 @@ token_budget:
     - packages/core/src/orchestrator/tokenBudget.ts
   tests:
     - tests/unit/tokenBudget.spec.ts
+  runtime_checks: []
+
+memory:
+  files:
+    - packages/types/src/memory.ts
+    - packages/db/src/repositories/memoryRepo.ts
+    - packages/memory/src/file/fileMemory.ts
+    - packages/memory/src/retrieval/memorySearch.ts
+    - packages/memory/src/autocapture/autoCapture.ts
+    - packages/memory/src/summarization/summarizer.ts
+    - apps/server/src/api/routes/memory.ts
+    - apps/server/src/services/chatService.ts
+  tests:
+    - tests/unit/autoCapture.spec.ts
+    - tests/unit/summarizer.spec.ts
+    - tests/integration/memory.spec.ts
+  runtime_checks:
+    - endpoint: GET /memory/search
+    - endpoint: GET /memory/entries
+
+documents:
+  files:
+    - packages/db/src/repositories/documentRepo.ts
+    - packages/db/src/repositories/docChunkRepo.ts
+    - packages/memory/src/ingest/chunkers.ts
+    - packages/memory/src/ingest/documentIngestor.ts
+    - apps/server/migrations/002_memory.sql
+  tests:
+    - tests/unit/chunkers.spec.ts
+    - tests/integration/memory.spec.ts
+  runtime_checks:
+    - endpoint: POST /memory/ingest
+    - endpoint: GET /memory/documents
+
+vector:
+  files:
+    - packages/memory/src/vector/vectorStore.ts
+    - packages/memory/src/embeddings/embeddingClient.ts
+  tests:
+    - tests/unit/chunkers.spec.ts
   runtime_checks: []

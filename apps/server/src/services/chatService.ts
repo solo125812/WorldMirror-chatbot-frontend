@@ -1,6 +1,6 @@
 /**
  * Chat Service — orchestrates chat operations
- * Phase 2: uses SQLite-backed repos, supports characters and swipes
+ * Phase 3: integrates memory search, auto-capture, and context compaction
  */
 
 import { ChatRepo, MessageRepo, CharacterRepo, SamplerPresetRepo } from '@chatbot/db';
@@ -8,6 +8,8 @@ import type { ChatPipeline } from '@chatbot/core';
 import type { ConfigService } from './configService.js';
 import type { ChatMessage } from '@chatbot/types';
 import { collectStream, expandMacros, applyRegexRules, allocateBudget, trimHistory } from '@chatbot/core';
+import type { MemorySearch, AutoCaptureService, ContextCompactor } from '@chatbot/memory';
+import { formatMemoryContext } from '@chatbot/memory';
 import { logger } from '@chatbot/utils';
 
 export class ChatService {
@@ -18,6 +20,9 @@ export class ChatService {
     private samplerPresetRepo: SamplerPresetRepo,
     private pipeline: ChatPipeline,
     private config: ConfigService,
+    private memorySearch?: MemorySearch,
+    private autoCaptureService?: AutoCaptureService,
+    private contextCompactor?: ContextCompactor,
   ) { }
 
   private buildPersona(character?: { name?: string; description?: string; personality?: string; scenario?: string; exampleMessages?: string; systemPrompt?: string; creatorNotes?: string; }): string {
@@ -30,6 +35,72 @@ export class ChatService {
     if (character.systemPrompt) parts.push(character.systemPrompt);
     if (character.creatorNotes) parts.push(`Creator Notes: ${character.creatorNotes}`);
     return parts.join('\n\n');
+  }
+
+  /**
+   * Retrieve relevant memory context for the current conversation.
+   */
+  private async getMemoryContext(
+    userMessage: string,
+    characterId?: string,
+    chatId?: string
+  ): Promise<string> {
+    if (!this.memorySearch) return '';
+
+    try {
+      // Search with appropriate scope
+      const scope = characterId ? 'character' : chatId ? 'chat' : 'global';
+      const sourceId = characterId ?? chatId;
+
+      const results = await this.memorySearch.search({
+        query: userMessage,
+        scope,
+        sourceId,
+        limit: 8,
+      });
+
+      // Also search global scope if we searched a narrower scope
+      if (scope !== 'global') {
+        const globalResults = await this.memorySearch.search({
+          query: userMessage,
+          scope: 'global',
+          limit: 4,
+        });
+        // Merge, deduplicating by id
+        for (const gr of globalResults) {
+          if (!results.find((r) => r.entry.id === gr.entry.id)) {
+            results.push(gr);
+          }
+        }
+        // Re-sort by score and limit
+        results.sort((a, b) => b.score - a.score);
+        results.splice(10);
+      }
+
+      return formatMemoryContext(results);
+    } catch (error) {
+      logger.warn('Memory retrieval failed, proceeding without memory', error);
+      return '';
+    }
+  }
+
+  /**
+   * Run auto-capture on a message.
+   */
+  private async runAutoCapture(
+    text: string,
+    characterId?: string,
+    chatId?: string
+  ): Promise<void> {
+    if (!this.autoCaptureService) return;
+
+    try {
+      const scope = characterId ? 'character' : chatId ? 'chat' : 'global';
+      const sourceId = characterId ?? chatId;
+      await this.autoCaptureService.processMessage(text, scope as any, sourceId);
+    } catch (error) {
+      logger.warn('Auto-capture failed', error);
+    }
   }
 
   /**
@@ -56,6 +127,9 @@ export class ChatService {
       content: opts.message,
     });
 
+    // Run auto-capture on user message
+    await this.runAutoCapture(opts.message, opts.characterId ?? chat.characterId, chatId);
+
     // Load conversation history
     const { messages: history } = this.messageRepo.listMessages(chatId, { limit: 100 });
 
@@ -77,6 +151,9 @@ export class ChatService {
     const authorNote = character?.postHistoryInstructions
       ? expandMacros(character.postHistoryInstructions, macroCtx)
       : undefined;
+
+    // Phase 3: Retrieve memory context
+    const memoryContext = await this.getMemoryContext(opts.message, characterId ?? undefined, chatId);
 
     const regexRules = appConfig.prompt.regexRules ?? [];
 
@@ -101,11 +178,28 @@ export class ChatService {
       stopSequences: presetSettings.stopSequences as string[] | undefined,
     };
 
+    // Phase 3: Context compaction check
+    let processedMessages = promptMessages;
+    if (this.contextCompactor) {
+      const { messages: compactedMessages } = this.contextCompactor.compact(
+        processedMessages,
+        8192,
+        chatId,
+        characterId ?? undefined
+      );
+      processedMessages = compactedMessages;
+    }
+
     const budget = allocateBudget({
       contextWindow: 8192,
       maxResponseTokens: completionParams.maxTokens ?? 1024,
     });
-    const trimmedHistory = trimHistory(promptMessages, budget.history);
+    const trimmedHistory = trimHistory(processedMessages, budget.history);
+
+    // Build assembly order with memory slot
+    const effectiveOrder = assemblyOrder.includes('memory')
+      ? assemblyOrder
+      : [...assemblyOrder.slice(0, -1), 'memory', ...assemblyOrder.slice(-1)];
 
     // Execute pipeline
     const content = await collectStream(
@@ -113,7 +207,8 @@ export class ChatService {
         systemPrompt,
         persona,
         authorNote,
-        assemblyOrder,
+        memoryContext,
+        assemblyOrder: effectiveOrder,
         modelId: completionParams.modelId,
         completionParams,
       })
@@ -126,6 +221,9 @@ export class ChatService {
       role: 'assistant',
       content: finalContent,
     });
+
+    // Run auto-capture on assistant response
+    await this.runAutoCapture(finalContent, characterId ?? undefined, chatId);
 
     return { chatId, message: assistantMsg };
   }
@@ -154,6 +252,9 @@ export class ChatService {
       content: opts.message,
     });
 
+    // Run auto-capture on user message
+    await this.runAutoCapture(opts.message, opts.characterId ?? chat.characterId, chatId);
+
     // Load conversation history
     const { messages: history } = this.messageRepo.listMessages(chatId, { limit: 100 });
 
@@ -175,6 +276,9 @@ export class ChatService {
     const authorNote = character?.postHistoryInstructions
       ? expandMacros(character.postHistoryInstructions, macroCtx)
       : undefined;
+
+    // Phase 3: Retrieve memory context
+    const memoryContext = await this.getMemoryContext(opts.message, characterId ?? undefined, chatId);
 
     const regexRules = appConfig.prompt.regexRules ?? [];
 
@@ -199,11 +303,28 @@ export class ChatService {
       stopSequences: presetSettings.stopSequences as string[] | undefined,
     };
 
+    // Phase 3: Context compaction check
+    let processedMessages = promptMessages;
+    if (this.contextCompactor) {
+      const { messages: compactedMessages } = this.contextCompactor.compact(
+        processedMessages,
+        8192,
+        chatId,
+        characterId ?? undefined
+      );
+      processedMessages = compactedMessages;
+    }
+
     const budget = allocateBudget({
       contextWindow: 8192,
       maxResponseTokens: completionParams.maxTokens ?? 1024,
     });
-    const trimmedHistory = trimHistory(promptMessages, budget.history);
+    const trimmedHistory = trimHistory(processedMessages, budget.history);
+
+    // Build assembly order with memory slot
+    const effectiveOrder = assemblyOrder.includes('memory')
+      ? assemblyOrder
+      : [...assemblyOrder.slice(0, -1), 'memory', ...assemblyOrder.slice(-1)];
 
     // Stream pipeline
     let fullContent = '';
@@ -213,7 +334,8 @@ export class ChatService {
       systemPrompt,
       persona,
       authorNote,
-      assemblyOrder,
+      memoryContext,
+      assemblyOrder: effectiveOrder,
       modelId: completionParams.modelId,
       completionParams,
     })) {
@@ -232,6 +354,9 @@ export class ChatService {
         content: finalContent,
       });
     }
+
+    // Run auto-capture on assistant response
+    await this.runAutoCapture(finalContent, characterId ?? undefined, chatId);
 
     // Yield the chat ID as metadata
     yield { type: 'meta', value: chatId };

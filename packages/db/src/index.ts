@@ -9,3 +9,8 @@ export { MessageRepo } from './repositories/messageRepo.js';
 export type { Swipe } from './repositories/messageRepo.js';
 export { CharacterRepo } from './repositories/characterRepo.js';
 export { SamplerPresetRepo } from './repositories/samplerPresetRepo.js';
+
+// Phase 3: Memory repositories
+export { MemoryRepo } from './repositories/memoryRepo.js';
+export { DocumentRepo } from './repositories/documentRepo.js';
+export { DocChunkRepo } from './repositories/docChunkRepo.js';

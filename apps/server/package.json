@@ -14,6 +14,7 @@
   "dependencies": {
     "@chatbot/core": "workspace:*",
     "@chatbot/db": "workspace:*",
+    "@chatbot/memory": "workspace:*",
     "@chatbot/types": "workspace:*",
     "@chatbot/utils": "workspace:*",
     "fastify": "^5.2.1",

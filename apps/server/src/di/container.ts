@@ -4,8 +4,18 @@
  */
 
 import { ProviderRegistry, MockProvider, AnthropicProvider, OllamaProvider, ChatPipeline } from '@chatbot/core';
-import { createDatabase, resetDatabase, runMigrations, ChatRepo, MessageRepo, CharacterRepo, SamplerPresetRepo } from '@chatbot/db';
+import { createDatabase, resetDatabase, runMigrations, ChatRepo, MessageRepo, CharacterRepo, SamplerPresetRepo, MemoryRepo, DocumentRepo, DocChunkRepo } from '@chatbot/db';
 import type { DatabaseClient } from '@chatbot/db';
+import {
+  createEmbeddingProvider,
+  createVectorStore,
+  FileMemory,
+  MemorySearch,
+  DocumentIngestor,
+  AutoCaptureService,
+  ContextCompactor,
+} from '@chatbot/memory';
+import type { EmbeddingProvider, VectorStore } from '@chatbot/memory';
 import { ConfigService } from '../services/configService.js';
 import { ChatService } from '../services/chatService.js';
 import { resolve, dirname } from 'node:path';
@@ -19,6 +29,17 @@ export interface Container {
   messageRepo: MessageRepo;
   characterRepo: CharacterRepo;
   samplerPresetRepo: SamplerPresetRepo;
+  // Phase 3: Memory
+  memoryRepo: MemoryRepo;
+  documentRepo: DocumentRepo;
+  docChunkRepo: DocChunkRepo;
+  embeddingProvider: EmbeddingProvider;
+  vectorStore: VectorStore;
+  fileMemory: FileMemory | null;
+  memorySearch: MemorySearch;
+  documentIngestor: DocumentIngestor;
+  autoCaptureService: AutoCaptureService;
+  contextCompactor: ContextCompactor;
   configService: ConfigService;
   chatService: ChatService;
 }
@@ -40,6 +61,11 @@ export function createContainer(): Container {
   const messageRepo = new MessageRepo(dbClient.db);
   const characterRepo = new CharacterRepo(dbClient.db);
   const samplerPresetRepo = new SamplerPresetRepo(dbClient.db);
+
+  // Phase 3: Memory repositories
+  const memoryRepo = new MemoryRepo(dbClient.db);
+  const documentRepo = new DocumentRepo(dbClient.db);
+  const docChunkRepo = new DocChunkRepo(dbClient.db);
 
   // Create config service
   const configService = new ConfigService();
@@ -78,8 +104,80 @@ export function createContainer(): Container {
   // Create chat pipeline
   const chatPipeline = new ChatPipeline(providerRegistry);
 
+  // Phase 3: Memory system setup
+  const appConfig = configService.get();
+  const memoryConfig = (appConfig as any).memory ?? {};
+
+  // Embedding provider — defaults to local fallback
+  const embeddingConfig = memoryConfig.embedding ?? {
+    provider: 'local',
+    model: 'local-fallback',
+    dimensions: 384,
+  };
+  const embeddingProvider = createEmbeddingProvider(embeddingConfig);
+
+  // Vector store — persisted to data/vectors.json
+  const dataDir = process.env.APP_DATA_DIR
+    ? resolve(process.env.APP_DATA_DIR)
+    : resolve(process.cwd(), 'data');
+  const vectorStore = createVectorStore({
+    dimensions: embeddingProvider.dimensions(),
+    persistPath: resolve(dataDir, 'vectors.json'),
+  });
+
+  // File-backed memory
+  let fileMemory: FileMemory | null = null;
+  try {
+    fileMemory = new FileMemory({
+      baseDir: resolve(dataDir, 'memory'),
+    });
+  } catch (error) {
+    // File memory is optional — may fail in restricted environments
+    fileMemory = null;
+  }
+
+  // Memory search
+  const memorySearch = new MemorySearch(
+    memoryRepo,
+    embeddingProvider,
+    vectorStore,
+    fileMemory
+  );
+
+  // Document ingestor
+  const documentIngestor = new DocumentIngestor(
+    documentRepo,
+    docChunkRepo,
+    embeddingProvider,
+    vectorStore
+  );
+
+  // Auto-capture service
+  const autoCaptureService = new AutoCaptureService(
+    memoryRepo,
+    embeddingProvider,
+    vectorStore,
+    fileMemory
+  );
+
+  // Context compactor
+  const contextCompactor = new ContextCompactor(
+    memoryRepo,
+    fileMemory
+  );
+
   // Create services
-  const chatService = new ChatService(chatRepo, messageRepo, characterRepo, samplerPresetRepo, chatPipeline, configService);
+  const chatService = new ChatService(
+    chatRepo,
+    messageRepo,
+    characterRepo,
+    samplerPresetRepo,
+    chatPipeline,
+    configService,
+    memorySearch,
+    autoCaptureService,
+    contextCompactor
+  );
 
   container = {
     providerRegistry,
@@ -89,6 +187,16 @@ export function createContainer(): Container {
     messageRepo,
     characterRepo,
     samplerPresetRepo,
+    memoryRepo,
+    documentRepo,
+    docChunkRepo,
+    embeddingProvider,
+    vectorStore,
+    fileMemory,
+    memorySearch,
+    documentIngestor,
+    autoCaptureService,
+    contextCompactor,
     configService,
     chatService,
   };
